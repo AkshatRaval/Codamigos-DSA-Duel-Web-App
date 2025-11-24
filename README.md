@@ -1,4 +1,4 @@
-# 💻 DuelCode: The 1v1 Real-Time Coding Duel Platform
+# 💻 Codamigos: The 1v1 Real-Time Coding Duel Platform
 
 A lightweight web app for developers to face off in coding problems. DuelCode is designed for **quick matches, live judging, and ranked ladders**, perfect for friendly competition, practice, and small tournaments.
 
