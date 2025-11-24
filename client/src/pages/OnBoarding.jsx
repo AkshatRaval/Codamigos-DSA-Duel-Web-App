@@ -18,8 +18,9 @@ import { useAuth } from "../lib/AuthProvider";
 import { db } from "../../firebase";
 import { useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, serverTimestamp, setDoc, runTransaction, getDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
+
 const OnBoarding = () => {
   const avatars = [
     "/avatars/avatar0.png",
@@ -38,35 +39,96 @@ const OnBoarding = () => {
   const index = useSelector((state) => state.avatarIndex.value);
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState("");
+  const [userHandle, setUserHandle] = useState("");
   const [bio, setBio] = useState("");
   const { currentUser } = useAuth();
 
-
+  const normalizeHandle = (h) =>
+    h.trim().replace(/^@+/, "").toLowerCase(); // remove @ and lowercase
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!displayName || !bio) {
-      toast.error("Fill All Fields")
+    if (!currentUser) {
+      toast.error("You must be logged in");
       return;
     }
 
-    const avatar =
-      avatars[index].split("/")[avatars[index].split("/").length - 1];
+    if (!displayName.trim() || !userHandle.trim() || !bio.trim()) {
+      toast.error("Fill all fields");
+      return;
+    }
+
+    const rawHandle = userHandle.trim();
+    const handleLower = normalizeHandle(rawHandle);
+
+    if (!handleLower || handleLower.length < 3) {
+      toast.error("Handle must be at least 3 characters");
+      return;
+    }
+
+    const avatarPath = avatars[index];
+    const avatarFile =
+      avatarPath.split("/")[avatarPath.split("/").length - 1];
+
     try {
-      await setDoc(doc(db, "users", currentUser.uid), {
-        uid: currentUser.uid,
-        displayName,
-        avatarUrl: avatar,
-        bio,
-        createdAt: serverTimestamp(),
-        elo: 400,
-        wins: 0,
-        losses: 0,
+      // handles/{handleLower} – used to guarantee uniqueness
+      const handleRef = doc(db, "handles", handleLower);
+      const userRef = doc(db, "users", currentUser.uid);
+
+      await runTransaction(db, async (tx) => {
+        const handleSnap = await tx.get(handleRef);
+        if (handleSnap.exists()) {
+          throw new Error("This handle is already taken");
+        }
+
+        // reserve handle
+        tx.set(handleRef, {
+          uid: currentUser.uid,
+          createdAt: serverTimestamp(),
+        });
+
+        // create/update user doc
+        tx.set(userRef, {
+          uid: currentUser.uid,
+          displayName: displayName.trim(),
+          userHandle: rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`,
+          handleLower,
+          avatarUrl: avatarFile,
+          bio: bio.trim(),
+          friends: [],
+          incomingFriendReq: [],
+          outgoingFriendReq: [],
+          createdAt: serverTimestamp(),
+          elo: 400,
+          wins: 0,
+          losses: 0,
+        });
       });
+
+      toast.success("Profile saved!");
+      navigate("/");
     } catch (err) {
-      console.log(err);
+      console.error(err);
+      if (err.message === "This handle is already taken") {
+        toast.error("That handle is already taken. Try another one.");
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     }
   };
+
+  useEffect(() => {
+    const checkProfile = async () => {
+      if (!currentUser) return;
+      const ref = doc(db, "users", currentUser.uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        navigate("/");
+      }
+    };
+    checkProfile();
+  }, [currentUser, navigate]);
+
 
   return (
     <section className="relative flex min-h-screen items-center justify-center">
@@ -101,6 +163,10 @@ const OnBoarding = () => {
             <div className="space-y-2">
               <Label>Enter Your Display Name</Label>
               <Input placeholder="Enter Your Epic Name" onChange={(e) => setDisplayName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Enter Your Epic Handle</Label>
+              <Input placeholder="Enter Your Epic Handle" onChange={(e) => setUserHandle(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>Enter About Yourself</Label>

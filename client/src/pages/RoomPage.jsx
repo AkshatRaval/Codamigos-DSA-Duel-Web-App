@@ -20,10 +20,9 @@ import { Button } from "../../components/ui/button";
 import { ArrowLeft, Check, Copy } from "lucide-react";
 import { motion } from 'motion/react'
 import { useNavigate } from "react-router-dom";
-import { socket } from "../lib/socket";
-import { useEffect } from "react";
 import toast from 'react-hot-toast';
 import { useAuth } from '../lib/AuthProvider'
+import api from "../lib/api";
 const RoomPage = () => {
   const navigate = useNavigate()
   const [isCopied, setIsCopied] = useState(false);
@@ -31,9 +30,11 @@ const RoomPage = () => {
   const [roomCode, setRoomCode] = useState('')
   // Inputs From Code
   const [inpJoinCode, setInpJoinCode] = useState('')
+  const [mode, setMode] = useState('dsa')
+  const [difficulty, setDifficulty] = useState('easy')
   const [inpCreateRoomName, setInpCreateRoomName] = useState('')
 
-
+  console.log(currentUser)
   const handleCopy = async (code) => {
     if (isCopied) return;
     try {
@@ -45,27 +46,24 @@ const RoomPage = () => {
     }
   };
 
-  const createRoom = (code) => {
-    socket.emit("create-room", code)
-  }
   const handleCreate = async () => {
     const body = {
       roomName: inpCreateRoomName,
-      mode: 'dsa',
-      difdifficulty: 'easy',
+      mode: mode || 'dsa',
+      difficulty: difficulty || 'easy',
       user: {
-        uid: currentUser.uid,
+        uid: currentUser?.uid,
         name: userData?.displayName,
-        avatarUrl: currentUser.photoURL
+        avatarUrl: currentUser?.avatarUrl
       },
     }
-    const res = await fetch("http://localhost:4000/api/rooms/create-room", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
+    if (!inpCreateRoomName || !mode || !difficulty || !currentUser) {
+      toast.error("Please fill in all fields");
+      return;
+    }
 
-    const data = await res.json();
+    const res = await api.post("/api/rooms/create-room", body)
+    const data = await res.data
     setRoomCode(data?.room?.code)
     if (data.ok) {
       navigate(`/room/${data.room.code}`);
@@ -74,13 +72,24 @@ const RoomPage = () => {
     }
   }
 
-
-  useEffect(() => {
-    socket.on("recive_code", (data) => {
-      console.log("Recived", data)
-    })
-  }, [socket])
-
+  const handleJoinRoom = async () => {
+    const body = {
+      code: inpJoinCode,
+      user: {
+        uid: currentUser?.uid,
+        name: userData?.displayName,
+        avatarUrl: currentUser?.avatarUrl
+      },
+    }
+    const res = await api.post("/api/rooms/join-room", body)
+    const data = await res.data;
+    setRoomCode(data?.room?.code)
+    if (data.ok) {
+      navigate(`/room/${data.room.code}`);
+    } else {
+      toast.error(data.message || "Failed to create room");
+    }
+  }
 
   return (
     <div className="relative">
@@ -134,11 +143,15 @@ const RoomPage = () => {
                   <div className="space-y-5">
                     <div className="space-y-2">
                       <Label>Room Name</Label>
-                      <Input id="roomname" placeholder="Enter Room Name" />
+                      <Input id="roomname" placeholder="Enter Room Name" onChange={(e) => setInpCreateRoomName(e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label>Select Mode</Label>
-                      <Select>
+                      <Select
+                        onValueChange={(value) => {
+                          setMode(value);
+                          console.log("Selected value:", value); // Check console to see it working
+                        }}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select Mode" />
                         </SelectTrigger>
@@ -157,6 +170,10 @@ const RoomPage = () => {
                       <RadioGroup
                         defaultValue="easy"
                         className="flex w-full items-center gap-5 mt-3"
+                        onValueChange={(value) => {
+                          setDifficulty(value);
+                          console.log("Selected value:", value); // Check console to see it working
+                        }}
                       >
                         <div className="flex items-center space-x-2">
                           <RadioGroupItem value="easy" id="easy" />
@@ -213,7 +230,7 @@ const RoomPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex-col gap-2 mt-5">
-                  <Button type="submit" className="w-full cursor-pointer " onClick={() => navigate(`/room/${inpJoinCode}`)}>
+                  <Button type="submit" className="w-full cursor-pointer " onClick={handleJoinRoom}>
                     Join Room
                   </Button>
                 </CardFooter>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
     ResizableHandle,
     ResizablePanel,
@@ -7,18 +7,15 @@ import {
 import Editor from '@monaco-editor/react'
 import {
     Sheet,
-    SheetClose,
     SheetContent,
-    SheetDescription,
     SheetFooter,
-    SheetHeader,
     SheetTitle,
     SheetTrigger,
 } from "../../components/ui/sheet"
 import { Button } from '../../components/ui/button'
 import { BsChatRightTextFill } from "react-icons/bs";
 import { Input } from '../../components/ui/input'
-import { DoorOpen, Link, RotateCcw, Send, Terminal } from 'lucide-react';
+import { DoorOpen, Link, RotateCcw, Send, Terminal, Play, Loader2, PlayCircle, Lock } from 'lucide-react';
 import {
     Tooltip,
     TooltipContent,
@@ -32,13 +29,196 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '../../components/ui/carousel'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { useNavigate, useParams } from 'react-router-dom';
-import { rtdb } from '../../firebase'
-import { get, ref } from 'firebase/database'
+import { db, rtdb } from '../../firebase'
+import { get, ref, remove, onValue, push, update } from 'firebase/database' // Added 'update'
+import { FaCrown, FaUser } from 'react-icons/fa'
+import { useAuth } from '../lib/AuthProvider'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 
+// Helper to format time (MM:SS)
+const formatTime = (seconds) => {
+    if (seconds <= 0) return "00:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
 const CodingArea = () => {
     const navigate = useNavigate()
+    const { code } = useParams()
+    const { currentUser, userData } = useAuth()
+    
+    // --- State Management ---
+    const [roomData, setRoomData] = useState(null)
+    const [selectedLanguage, setSelectedLanguage] = useState('javascript');
+    const [editorCode, setEditorCode] = useState("");
+    const [messages, setMessages] = useState([]);
+    const [chatInput, setChatInput] = useState("");
+    const [timeLeft, setTimeLeft] = useState(45 * 60); // Default 45 mins
+    const [isRunning, setIsRunning] = useState(false);
+    
+    // Problem Data
+    const prob = dataset[0]
+    const testcases = [prob.tests[0], prob.tests[1], prob.tests[2]]
+
+    useEffect(() => {
+        if (!currentUser || !code) return;
+
+        const roomRef = ref(rtdb, `rooms/${code}`);
+        const messagesRef = ref(rtdb, `rooms/${code}/messages`);
+
+        // Listener for Room Data
+        const unsubscribeRoom = onValue(roomRef, (snapshot) => {
+            if (!snapshot.exists()) {
+                toast.error("Room ended or does not exist.");
+                navigate(`/room`);
+                return;
+            } 
+            
+            const data = snapshot.val();
+            setRoomData(data);
+
+            // Access Control: If room is ongoing and user is NOT in the player list, kick them.
+            if (data.status === "ongoing" && (!data.players || !data.players[currentUser.uid])) {
+                toast.error("Match already in progress!");
+                navigate('/room');
+            }
+        });
+
+        // Listener for Chat Messages
+        const unsubscribeChat = onValue(messagesRef, (snapshot) => {
+            if (snapshot.exists()) {
+                const msgs = Object.values(snapshot.val());
+                setMessages(msgs);
+            }
+        });
+
+        return () => {
+            unsubscribeRoom();
+            unsubscribeChat();
+        };
+    }, [code, navigate, currentUser]);
+
+    useEffect(() => {
+        let interval;
+        
+        if (roomData?.status === "ongoing" && roomData?.startTime) {
+            // Function to calculate remaining time based on Server Start Time
+            const updateTimer = () => {
+                const now = Date.now();
+                const elapsedSeconds = (now - roomData.startTime) / 1000;
+                const remaining = (45 * 60) - elapsedSeconds; // 45 mins duration
+                
+                setTimeLeft(remaining > 0 ? remaining : 0);
+            };
+
+            updateTimer(); // Initial call
+            interval = setInterval(updateTimer, 1000);
+        } else {
+            // If not started, reset to 45 mins
+            setTimeLeft(45 * 60);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        }
+    }, [roomData?.status, roomData?.startTime]);
+
+    // --- 3. Update Code on Language Change ---
+    useEffect(() => {
+        if (prob?.starterCode?.[selectedLanguage]) {
+            setEditorCode(prob.starterCode[selectedLanguage]);
+        }
+    }, [selectedLanguage]);
+
+    // --- Handlers ---
+
+    const handleEditorChange = (value) => {
+        setEditorCode(value || "");
+    }
+
+    const handleSendMessage = async () => {
+        if (!chatInput.trim()) return;
+        const messagesRef = ref(rtdb, `rooms/${code}/messages`);
+        await push(messagesRef, {
+            text: chatInput,
+            sender: userData?.displayName || "Unknown",
+            senderId: currentUser.uid,
+            timestamp: Date.now()
+        });
+        setChatInput("");
+    };
+
+    const handleRunCode = () => {
+        setIsRunning(true);
+        setTimeout(() => {
+            setIsRunning(false);
+            toast.success("All Test Cases Passed! (Simulated)");
+        }, 2000);
+    };
+
+    // --- START MATCH FUNCTION ---
+    const handleStartMatch = async () => {
+        const roomRef = ref(rtdb, `rooms/${code}`);
+        try {
+            await update(roomRef, {
+                status: "ongoing",
+                startTime: Date.now() // Use timestamp to sync users
+            });
+            toast.success("Match Started! Timer running.");
+        } catch (error) {
+            toast.error("Failed to start match");
+            console.error(error);
+        }
+    }
+
+    // --- LEAVE / ARCHIVE FUNCTION ---
+    const handleLeave = async () => {
+        if(!currentUser) return;
+
+        const roomRef = ref(rtdb, `rooms/${code}`);
+        const playerRef = ref(rtdb, `rooms/${code}/players/${currentUser.uid}`);
+
+        try {
+            const snapshot = await get(roomRef);
+            
+            // Handle case where room is already deleted
+            if (!snapshot.exists()) {
+                navigate(`/room`);
+                return;
+            }
+
+            const currentRoomData = snapshot.val();
+            const isHost = currentRoomData?.players?.[currentUser.uid]?.isHost;
+
+            if (isHost) {
+                // 1. Prepare Data: Deep copy and strip 'undefined' to prevent Firestore crash
+                const safeData = JSON.parse(JSON.stringify(currentRoomData));
+                
+                // 2. Add to Firestore
+                await addDoc(collection(db, "roomsData"), {
+                    ...safeData,
+                    roomId: code,
+                    archivedAt: serverTimestamp()
+                });
+
+                // 3. Delete from RTDB
+                await remove(roomRef);
+                toast.success("Room archived and closed.");
+            } else {
+                // Guest: Just remove self
+                await remove(playerRef);
+                toast.success("You left the room.");
+            }
+            navigate(`/room`);
+        } catch (error) {
+            console.error("Error leaving room:", error);
+            toast.error("Error processing request. Check console.");
+        }
+    }
+
+    // Monaco Config
     const languages = [
         { value: 'javascript', label: 'JavaScript' },
         { value: 'python', label: 'Python' },
@@ -46,128 +226,122 @@ const CodingArea = () => {
         { value: 'cpp', label: 'C++' },
     ];
 
-    const { code } = useParams()
-
-    useEffect(() => {
-        checkCodeExists()
-    }, [])
-
-    const roomRef = ref(rtdb, `rooms/${code}`)
-    const checkCodeExists = async () => {
-        const snapshot = await get(roomRef);
-        if (!snapshot.exists()) {
-            toast.error("There's No Room Of this Code")
-            navigate(`/room`)
-            return
-        }
-    }
-
-    const [selectedLanguage, setSelectedLanguage] = useState('javascript');
-    const prob = dataset[0]
-    const [editorCode, setEditorCode] = useState(
-        prob.starterCode[selectedLanguage]
-    );
-    useEffect(() => {
-        setEditorCode(prob.starterCode[selectedLanguage]);
-    }, [selectedLanguage]);
-
-    function handleEditorChange(value) {
-        setStarterCode(value || "");
-    }
-    const testcases = [prob.tests[0], prob.tests[1], prob.tests[2]]
-
     const editorOptions = {
-        minimap: {
-            enabled: false, // Disables the minimap
-        },
+        minimap: { enabled: false },
         fontSize: 14,
-        wordWrap: 'on',      // Wraps long lines
-        readOnly: false,   // Makes the editor read-only
-        selectOnLineNumbers: true, // Selects the whole line when clicking line number
+        wordWrap: 'on',
         automaticLayout: true,
         scrollBeyondLastLine: false,
-        glyphMargin: false,
+        padding: { top: 16 }
     };
+
+    // Determine if current user is host
+    const isHost = roomData?.players?.[currentUser?.uid]?.isHost;
+
     return (
-        <div className='h-screen'>
-            <ResizablePanelGroup direction="horizontal"
-                className="w-full h-full">
+        <div className='h-screen flex flex-col bg-background'>
+            
+            <ResizablePanelGroup direction="horizontal" className="w-full h-full">
+                
+                {/* --- PANEL 1: PROBLEM DESCRIPTION --- */}
                 <ResizablePanel defaultSize={40} minSize={25} maxSize={45}>
-                    <ResizablePanelGroup direction="vertical"
-                        className="w-full h-full">
+                    <ResizablePanelGroup direction="vertical" className="w-full h-full">
                         <ResizablePanel defaultSize={80} minSize={60}>
-                            <ScrollArea className="w-full h-full px-2 bg-accent/20">
-                                <div>
-                                    <div className='p-4 flex flex-col gap-3'>
-                                        <div className='flex justify-between'>
-                                            <h1 className='font-bold text-2xl'>{prob.title}</h1>
-                                            <Badge variant={prob.difficulty} >{prob.difficulty}</Badge>
-                                        </div>
+                            <ScrollArea className="w-full h-full px-2 bg-accent/10">
+                                <div className='p-4 flex flex-col gap-4'>
+                                    <div className='flex justify-between items-start'>
                                         <div>
-                                            {prob.tags.map((tag) => (
-                                                <Badge key={tag} variant="outline" className="capitalize text-xs">{tag}</Badge>
-                                            ))}
+                                            <h1 className='font-bold text-2xl tracking-tight'>{prob.title}</h1>
+                                            <div className='flex gap-2 mt-2'>
+                                                <Badge variant={prob.difficulty === "Hard" ? "destructive" : prob.difficulty === "Medium" ? "default" : "secondary"}>
+                                                    {prob.difficulty}
+                                                </Badge>
+                                                {prob.tags.map((tag) => (
+                                                    <Badge key={tag} variant="outline" className="capitalize text-xs">{tag}</Badge>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
-                                    <Separator />
-                                    <div className='p-2'>
-                                        <h1 className='text-md italic font-semibold text-lg'>Description</h1>
-                                        <p className='mt-3 text-justify'>{prob.statement}</p>
+                                    
+                                    <div className='text-sm text-muted-foreground text-justify leading-relaxed'>
+                                        {prob.statement}
                                     </div>
+
                                     <Separator />
-                                    <div className='p-2'>
-                                        <h1 className='text-md italic font-semibold text-lg '>Examples</h1>
-                                        <div className='flex flex-col gap-3'>
+
+                                    <div>
+                                        <h2 className='font-semibold text-lg mb-2'>Examples</h2>
+                                        <div className='flex flex-col gap-4'>
                                             {prob.samples.map((sample, index) => (
-                                                <div key={index} className='flex items-center px-3'>
-                                                    <div className='border border-yellow-400/80 h-10 max-w-0.5' />
-                                                    <div key={index} className='flex flex-col px-4'>
-                                                        <p>Input:<span className='text-muted-foreground'> {sample.input}</span></p>
-                                                        <p>Output:<span className='text-muted-foreground'> {sample.output}</span></p>
-                                                    </div>
+                                                <div key={index} className='bg-muted/50 rounded-lg p-3 border text-sm'>
+                                                    <div className='font-mono font-bold mb-1'>Input:</div>
+                                                    <div className='bg-background p-2 rounded border mb-2 font-mono'>{sample.input}</div>
+                                                    <div className='font-mono font-bold mb-1'>Output:</div>
+                                                    <div className='bg-background p-2 rounded border font-mono'>{sample.output}</div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
+                                    
                                     <Separator />
-                                    <div className='p-2'>
-                                        <h1 className='text-md italic font-semibold text-lg '>Constraints</h1>
-                                        {prob.constraints.map((c) => (
-                                            <p key={c} className='my-1'>{c}</p>
-                                        ))}
+                                    
+                                    <div>
+                                        <h2 className='font-semibold text-lg mb-2'>Constraints</h2>
+                                        <ul className='list-disc list-inside text-sm text-muted-foreground'>
+                                            {prob.constraints.map((c, i) => <li key={i}>{c}</li>)}
+                                        </ul>
                                     </div>
                                 </div>
-
                             </ScrollArea>
                         </ResizablePanel>
+                        
                         <ResizableHandle withHandle />
-                        <ResizablePanel defaultSize={50} minSize={25}>
-                            Questions
+                        
+                        {/* Sub-Panel: Collaborative Notes Placeholder */}
+                        <ResizablePanel defaultSize={20} minSize={0} collapsible>
+                             <div className='p-4 text-center text-muted-foreground text-sm flex flex-col items-center justify-center h-full gap-2'>
+                                <span>Collaborative Notes Coming Soon</span>
+                             </div>
                         </ResizablePanel>
                     </ResizablePanelGroup>
                 </ResizablePanel>
-                <ResizableHandle withHandle />
-                <ResizablePanel defaultSize={75} minSize={25}>
-                    <ResizablePanelGroup direction="vertical">
-                        <Select
-                            value={selectedLanguage}
-                            onValueChange={(newValue) => setSelectedLanguage(newValue)}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select Language" />
-                            </SelectTrigger>
 
-                            <SelectContent>
-                                {languages.map((lang) => (
-                                    <SelectItem key={lang.value} value={lang.value}>
-                                        {lang.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <ResizablePanel defaultSize={75}>
+                <ResizableHandle withHandle />
+
+                {/* --- PANEL 2: EDITOR & TEST CASES --- */}
+                <ResizablePanel defaultSize={60}>
+                    <ResizablePanelGroup direction="vertical">
+                        
+                        {/* Editor Toolbar */}
+                        <div className='h-12 border-b flex items-center justify-between px-4 bg-card'>
+                            <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+                                <SelectTrigger className="w-[140px] h-8">
+                                    <SelectValue placeholder="Language" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {languages.map((lang) => (
+                                        <SelectItem key={lang.value} value={lang.value}>{lang.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            <div className='flex gap-2'>
+                                <Button 
+                                    size="sm" 
+                                    onClick={handleRunCode} 
+                                    disabled={isRunning}
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                    {isRunning ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Play className="mr-2 h-4 w-4 fill-current"/>}
+                                    Run Code
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Monaco Editor */}
+                        <ResizablePanel defaultSize={65}>
                             <Editor
-                                height="90vh"
+                                height="100%"
                                 language={selectedLanguage}
                                 value={editorCode}
                                 theme="vs-dark"
@@ -175,136 +349,152 @@ const CodingArea = () => {
                                 onChange={handleEditorChange}
                             />
                         </ResizablePanel>
+                        
                         <ResizableHandle withHandle />
-                        <ResizablePanel defaultSize={45} minSize={20} maxSize={50} className="flex flex-col h-full">
-
-                            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/20">
-                                <h1 className="font-semibold text-sm">Test Cases</h1>
+                        
+                        {/* Test Cases Panel */}
+                        <ResizablePanel defaultSize={35} minSize={20} className="flex flex-col bg-muted/10">
+                            <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
+                                <h1 className="font-semibold text-sm flex items-center gap-2">
+                                    <Terminal size={14} /> Test Results
+                                </h1>
                                 <Badge variant="outline" className="text-xs">{testcases.length} Cases</Badge>
                             </div>
-
-                            <div className="flex-1 p-2 overflow-hidden bg-muted/10">
-                                <Carousel className="w-full h-full" opts={{ align: "start" }}>
+                            <div className="flex-1 p-4 overflow-hidden">
+                                <Carousel className="w-full max-w-xl mx-auto" opts={{ align: "start" }}>
                                     <CarouselContent>
                                         {testcases.map((test, index) => (
-                                            <CarouselItem key={index}>
-                                                <div className="h-full">
-                                                    <Card className="h-full border-muted bg-card shadow-sm flex flex-col">
-                                                        {/* Header with Integrated Navigation */}
-                                                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-muted/50 px-4 py-3">
-                                                            <div className="flex items-center gap-2">
-                                                                <Terminal className="h-4 w-4 text-muted-foreground" />
-                                                                <CardTitle className="text-sm font-medium">Case {index + 1}</CardTitle>
-                                                            </div>
-
-                                                            <div className="flex gap-1">
-                                                                {/* Visual indicators or mini-status badges */}
-                                                                <div className="h-2 w-2 rounded-full bg-green-500/50" />
-                                                                <div className="h-2 w-2 rounded-full bg-yellow-500/50" />
-                                                            </div>
-                                                        </CardHeader>
-
-                                                        <CardContent className="space-y-4 pt-4 flex-1 overflow-hidden">
-
-                                                            {/* INPUT - Scrollable Area */}
-                                                            <div className="space-y-1.5">
-                                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                                                    Input
-                                                                </span>
-                                                                <div className="relative rounded-md bg-slate-950 text-slate-50 font-mono text-xs shadow-inner border border-slate-800">
-                                                                    {/* max-h-24 ensures it doesn't blow out the panel height */}
-                                                                    <div className="max-h-24 overflow-y-auto p-3 custom-scrollbar">
-                                                                        <pre className="whitespace-pre-wrap break-all">
-                                                                            {test.input}
-                                                                        </pre>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* OUTPUT - Scrollable Area */}
-                                                            <div className="space-y-1.5">
-                                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                                                                    Expected Output
-                                                                </span>
-                                                                <div className="rounded-md bg-muted/50 border border-border font-mono text-xs text-primary shadow-sm">
-                                                                    {/* max-h-24 ensures it doesn't blow out the panel height */}
-                                                                    <div className="max-h-24 overflow-y-auto p-3 custom-scrollbar">
-                                                                        <pre className="whitespace-pre-wrap break-all">
-                                                                            {test.output}
-                                                                        </pre>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                        </CardContent>
-                                                    </Card>
-                                                </div>
+                                            <CarouselItem key={index} className="md:basis-1/2 lg:basis-1/2">
+                                                 <Card className='h-full'>
+                                                    <CardHeader className="p-3 pb-0">
+                                                        <CardTitle className="text-sm font-medium">Case {index + 1}</CardTitle>
+                                                    </CardHeader>
+                                                    <CardContent className="p-3 text-xs font-mono space-y-2">
+                                                        <div>
+                                                            <span className="text-muted-foreground">Input:</span>
+                                                            <div className="bg-muted p-1 rounded mt-1 truncate">{test.input}</div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-muted-foreground">Expected:</span>
+                                                            <div className="bg-muted p-1 rounded mt-1 truncate">{test.output}</div>
+                                                        </div>
+                                                    </CardContent>
+                                                 </Card>
                                             </CarouselItem>
                                         ))}
                                     </CarouselContent>
-
-
-                                    <CarouselPrevious className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 z-10 bg-background/80 backdrop-blur-sm border-muted" />
-                                    <CarouselNext className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 z-10 bg-background/80 backdrop-blur-sm border-muted" />
+                                    <CarouselPrevious className="left-0" />
+                                    <CarouselNext className="right-0" />
                                 </Carousel>
                             </div>
                         </ResizablePanel>
                     </ResizablePanelGroup>
                 </ResizablePanel>
+
                 <ResizableHandle withHandle />
 
-                <ResizablePanel defaultSize={20} minSize={10} maxSize={20}>
-                    <div className="flex min-h-full flex-col items-center gap-2 justify-between p-4">
-                        <div className='w-full'>
-                            <div className='flex gap-2 text-yellow-400 font-bold items-center bg-accent border p-1 justify-center rounded-2xl mb-2'>
-                                <Link size={18} />{code}
+                {/* --- PANEL 3: SIDEBAR (INFO & PLAYERS) --- */}
+                <ResizablePanel defaultSize={15} minSize={12} maxSize={20}>
+                    <div className="flex flex-col h-full bg-background border-l">
+                        {/* Room Code & Timer */}
+                        <div className='p-4 border-b flex flex-col items-center gap-3'>
+                            <div className='flex items-center gap-2 text-yellow-500 font-bold bg-yellow-500/10 border border-yellow-500/20 px-4 py-1.5 rounded-full text-sm'>
+                                {roomData?.status === "ongoing" ? <Lock size={14}/> : <Link size={14} />} 
+                                {code}
                             </div>
-                            <div>
-                                Timer: 00:52
+                            <div className={`text-2xl font-mono font-bold ${timeLeft < 300 && roomData?.status === "ongoing" ? 'text-red-500 animate-pulse' : 'text-primary'}`}>
+                                {formatTime(timeLeft)}
                             </div>
-                            <Separator className="w-full my-3" />
-                            <div className='flex flex-col w-full gap-2'>
-                                <Button>player 1</Button>
-                                <Button>player 2</Button>
-                            </div>
-                            <Separator className="w-full my-3" />
-                            <div className='flex *:flex-1 w-full gap-2'>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button variant="outline"><RotateCcw /></Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p>Rematch?</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button variant="outline"><DoorOpen /></Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p>Leave</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                            </div>
-
+                            
+                            {/* START MATCH BUTTON (Only for Host & if not started) */}
+                            {isHost && roomData?.status !== "ongoing" && (
+                                <Button 
+                                    onClick={handleStartMatch} 
+                                    className="w-full bg-blue-600 hover:bg-blue-700 h-8 text-xs"
+                                >
+                                    <PlayCircle className="mr-2 h-4 w-4" /> Start Match
+                                </Button>
+                            )}
+                            
+                            {/* Status Indicator */}
+                            {roomData?.status === "ongoing" && (
+                                <Badge variant="secondary" className="w-full justify-center bg-green-500/10 text-green-500 hover:bg-green-500/20 border-green-500/50">
+                                    Ongoing
+                                </Badge>
+                            )}
                         </div>
-                        <div className='fixed bottom-5 right-5 gap-2 z-5'>
+
+                        {/* Player List */}
+                        <ScrollArea className='flex-1 p-3'>
+                            <div className='space-y-2'>
+                                <h3 className='text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2'>Players</h3>
+                                {roomData?.players && Object.entries(roomData.players).map(([id, player]) => (
+                                    <div key={id} className='flex items-center gap-2 p-2 rounded-md bg-accent/50 border text-sm'>
+                                        {player.isHost ? <FaCrown className="text-yellow-500" /> : <FaUser className="text-muted-foreground" />}
+                                        <span className='truncate max-w-[100px]'>{player.name || "Unknown"}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </ScrollArea>
+
+                        {/* Footer Actions */}
+                        <div className='p-3 border-t grid grid-cols-2 gap-2'>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="outline" size="icon" className="w-full">
+                                        <RotateCcw size={16} />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Reset Code</TooltipContent>
+                            </Tooltip>
+                            
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="destructive" size="icon" className="w-full" onClick={handleLeave}>
+                                        <DoorOpen size={16} />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{isHost ? "Archive & Close" : "Leave Room"}</TooltipContent>
+                            </Tooltip>
+                        </div>
+
+                        {/* Chat Trigger */}
+                        <div className='p-3 border-t'>
                             <Sheet>
-                                <SheetTrigger>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className='border p-3 bg-accent text-accent-foreground rounded-full'><BsChatRightTextFill /></div>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>Chat</p>
-                                        </TooltipContent>
-                                    </Tooltip>
+                                <SheetTrigger asChild>
+                                    <Button className='w-full gap-2' variant="secondary">
+                                        <BsChatRightTextFill /> Chat
+                                    </Button>
                                 </SheetTrigger>
-                                <SheetContent className="p-5">
-                                    <SheetTitle>Chat With Your Rival</SheetTitle>
-                                    <SheetFooter className="flex flex-row">
-                                        <Input placeholder="Type Here..." />
-                                        <Button className="cursor-pointer"><Send /></Button>
+                                <SheetContent side="right" className="flex flex-col h-full">
+                                    <SheetTitle>Room Chat</SheetTitle>
+                                    <Separator className="my-2"/>
+                                    
+                                    {/* Chat Messages Area */}
+                                    <ScrollArea className="flex-1 pr-4">
+                                        <div className="flex flex-col gap-3">
+                                            {messages.map((msg, i) => (
+                                                <div key={i} className={`flex flex-col ${msg.senderId === currentUser.uid ? 'items-end' : 'items-start'}`}>
+                                                    <div className={`max-w-[85%] rounded-lg p-2 text-sm ${msg.senderId === currentUser.uid ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                                        {msg.text}
+                                                    </div>
+                                                    <span className="text-[10px] text-muted-foreground mt-1">{msg.sender}</span>
+                                                </div>
+                                            ))}
+                                            {messages.length === 0 && <p className="text-center text-muted-foreground text-sm mt-5">No messages yet.</p>}
+                                        </div>
+                                    </ScrollArea>
+
+                                    <SheetFooter className="mt-4">
+                                        <div className="flex w-full gap-2">
+                                            <Input 
+                                                value={chatInput} 
+                                                onChange={(e) => setChatInput(e.target.value)} 
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                                placeholder="Type message..." 
+                                            />
+                                            <Button size="icon" onClick={handleSendMessage}><Send size={16}/></Button>
+                                        </div>
                                     </SheetFooter>
                                 </SheetContent>
                             </Sheet>

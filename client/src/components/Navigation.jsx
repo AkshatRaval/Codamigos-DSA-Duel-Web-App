@@ -6,6 +6,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "../../components/ui/avatar";
+import { FaUserFriends } from "react-icons/fa";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,7 @@ const navLinks = [
   { name: "About", path: "/about-us" },
 ];
 import { useAuth } from "../lib/AuthProvider";
+import { LogOut, User } from "lucide-react";
 
 export default function Navigation() {
   const navigate = useNavigate();
@@ -36,7 +38,7 @@ export default function Navigation() {
   }, []);
 
   const { currentUser, userData, logout } = useAuth();
-  console.log(userData);
+  // console.log(userData);
 
   return (
     <header className="w-full md:bg-background fixed top-0 left-0 z-50">
@@ -77,11 +79,12 @@ export default function Navigation() {
                       </Avatar>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
-                      <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                      <DropdownMenuLabel>{userData?.displayName}</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => navigate('profile')}>Profile</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('profile')}><User /> Profile</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('myamigos')}><FaUserFriends />Amigos</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => logout()}>
-                        Logout
+                       <LogOut /> Logout
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

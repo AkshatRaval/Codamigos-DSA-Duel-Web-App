@@ -31,7 +31,7 @@ export const createRoom = async (req, res) => {
             roomName: roomName || "Untitled Room",
             mode: mode || "dsa",
             difficulty: difficulty || "mixed",
-            status: "waiting", // waiting | running | finished
+            status: "waiting", 
             createdAt: now,
             players: {
                 [user.uid]: {
@@ -58,8 +58,6 @@ export const createRoom = async (req, res) => {
 
 export const joinRoom = async (req, res) => {
     try {
-
-
         const { code, user } = req.body;
         if (!code || !user?.uid) {
             return res.status(400).json({ ok: false, message: "Code And User Are required" });

@@ -13,10 +13,11 @@ import OnBoarding from "./pages/OnBoarding.jsx";
 import { Toaster } from "react-hot-toast";
 import Profile from "./pages/Profile.jsx";
 import CodingArea from "./pages/CodingArea.jsx";
+import MyAmigos from "./pages/MyAmigos.jsx";
 
 const App = () => {
   const isMobile = () => {
-    return window.matchMedia("(max-width: 768px)").matches; // Example: considers devices with max-width of 768px as mobile
+    return window.matchMedia("(max-width: 568px)").matches; 
   };
 
   if (isMobile()) {
@@ -43,6 +44,7 @@ const App = () => {
               <Route path="auth" element={<LoginSignup />} />
               <Route path="profile" element={<Profile />} />
             </Route>
+              <Route path="myamigos" element={<MyAmigos />} />
               <Route path="/room/:code" element={<CodingArea />} />
             <Route path="/room" element={<RoomPage />} />
             <Route path="*" element={<NotFound />} />
