@@ -34,7 +34,7 @@ const RoomPage = () => {
   const [difficulty, setDifficulty] = useState('easy')
   const [inpCreateRoomName, setInpCreateRoomName] = useState('')
 
-  console.log(currentUser)
+  // console.log(currentUser)
   const handleCopy = async (code) => {
     if (isCopied) return;
     try {

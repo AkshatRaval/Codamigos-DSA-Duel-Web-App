@@ -11,7 +11,9 @@ import {
   Trophy,
   Copy,
   Filter,
-  ArrowLeft
+  ArrowLeft,
+  User,
+  UserRoundX
 } from "lucide-react";
 import { Button } from '../../components/ui/button'
 import { Card, CardContent } from '../../components/ui/card'
@@ -23,23 +25,31 @@ import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthProvider"
 import { db } from "../../firebase";
-import { 
-  doc, 
-  getDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  getDocs,
   documentId,
   orderBy,
-  limit 
+  limit,
+  arrayRemove,
+  arrayUnion,
+  updateDoc
 } from "firebase/firestore";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "../../components/ui/avatar"
-
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../../components/ui/context-menu"
 // --- UTILITY: Calculate Rank based on ELO ---
 const getRankFromElo = (elo) => {
   if (elo < 1200) return "Bronze";
@@ -53,7 +63,7 @@ const getRankFromElo = (elo) => {
 // Firestore 'in' queries are limited to 10 items. This handles large lists.
 const fetchUserProfiles = async (uids) => {
   if (!uids || uids.length === 0) return [];
-  
+
   const uniqueUids = [...new Set(uids)]; // Remove duplicates
   const chunks = [];
   const chunkSize = 10;
@@ -69,23 +79,23 @@ const fetchUserProfiles = async (uids) => {
       return snapshot.docs.map(doc => {
         const data = doc.data();
         return {
-            id: doc.id,
-            uid: data.uid,
-            name: data.displayName || "Unknown",
-            handle: data.userHandle || "@unknown",
-            avatarUrl: data.avatarUrl,
-            // Map DB fields to UI fields
-            tagline: data.bio || "No bio yet.",
-            elo: data.elo || 0,
-            rank: getRankFromElo(data.elo || 0),
-            wins: data.wins || 0,
-            losses: data.losses || 0,
-            languages: ["JavaScript"], // Default as it's not in DB schema provided
-            // Firestore doesn't have native "online" status without Realtime DB presence
-            // We default to false or check lastActive if you have that field
-            status: "Offline", 
-            online: false, 
-            mutual: 0 // Calculation would require checking friends of friends
+          id: doc.id,
+          uid: data.uid,
+          name: data.displayName || "Unknown",
+          handle: data.userHandle || "@unknown",
+          avatarUrl: data.avatarUrl,
+          // Map DB fields to UI fields
+          tagline: data.bio || "No bio yet.",
+          elo: data.elo || 0,
+          rank: getRankFromElo(data.elo || 0),
+          wins: data.wins || 0,
+          losses: data.losses || 0,
+          languages: ["JavaScript"], // Default as it's not in DB schema provided
+          // Firestore doesn't have native "online" status without Realtime DB presence
+          // We default to false or check lastActive if you have that field
+          status: "Offline",
+          online: false,
+          mutual: 0 // Calculation would require checking friends of friends
         };
       });
     });
@@ -107,7 +117,7 @@ const FriendsPage = () => {
   const [incomingReqs, setIncomingReqs] = useState([]);
   const [outgoingReqs, setOutgoingReqs] = useState([]);
   const [discoverUsers, setDiscoverUsers] = useState([]); // For "Add Friend" tab
-  
+
   // State for UI
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("friends");
@@ -138,7 +148,6 @@ const FriendsPage = () => {
     loadSocialData();
   }, [userData]);
 
-  // 2. Fetch "Discover" users (Top Players) for Add Tab
   useEffect(() => {
     if (activeTab === 'add') {
       const fetchTopPlayers = async () => {
@@ -155,14 +164,15 @@ const FriendsPage = () => {
 
               return {
                 id: doc.id,
+                avatarUrl: data.avatarUrl,
                 name: data.displayName,
                 handle: data.userHandle,
                 elo: data.elo,
-                mutual: 0 
+                mutual: 0
               };
             })
             .filter(u => u !== null);
-            
+
           setDiscoverUsers(users);
         } catch (e) {
           console.error("Error fetching top players", e);
@@ -172,7 +182,6 @@ const FriendsPage = () => {
     }
   }, [activeTab, userData]);
 
-  // 🔹 Handlers (Placeholder logic preserved)
   const handleInvite = (friend, e) => {
     e.stopPropagation();
     alert(`Invite sent to ${friend.name}`);
@@ -188,28 +197,132 @@ const FriendsPage = () => {
     alert(`Opening chat with ${friend.name}`);
   };
 
-  const handleAccept = (req) => alert(`Accepted ${req.name}`);
-  const handleIgnore = (req) => alert(`Ignored ${req.name}`);
-  const handleCancel = (req) => alert(`Cancelled request to ${req.name}`);
-  const handleAddFriend = (user) => alert(`Friend request sent to ${user.name}`);
+  // ================== Handle Functions ================== //
+  const handleAccept = async (req) => {
+    if (!userData || !req.id) return;
+    try {
+      setLoading(true);
+      const myUid = userData.uid;
+      const friendUid = req.id;
+      const myDocRef = doc(db, "users", myUid);
+      const friendDocRef = doc(db, "users", friendUid);
+      await Promise.all([
+        updateDoc(myDocRef, {
+          incomingFriendReq: arrayRemove(friendUid),
+          friends: arrayUnion(friendUid)
+        }),
+        updateDoc(friendDocRef, {
+          outgoingFriendReq: arrayRemove(myUid),
+          friends: arrayUnion(myUid)
+        })
+      ]);
+      alert(`You are now friends with ${req.name}!`);
+      setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
+      setFriendsList(prev => [...prev, { ...req, status: "Offline" }]);
 
-  // 🔍 Filtered lists (Client side filtering for Friends)
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      alert("Failed to accept friend request. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+
+  const handleIgnore = async (req) => {
+    if (!userData || !req.id) return;
+    try {
+      setLoading(true);
+      const myUid = userData.uid;
+      const friendUid = req.id;
+      const myDocRef = doc(db, "users", myUid);
+      const friendDocRef = doc(db, "users", friendUid);
+      await Promise.all([
+        updateDoc(myDocRef, {
+          incomingFriendReq: arrayRemove(friendUid),
+        }),
+        updateDoc(friendDocRef, {
+          outgoingFriendReq: arrayRemove(myUid),
+        })
+      ]);
+      alert(`You Ignored ${req.name}!`);
+      setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      alert("Failed to accept friend request. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = async (req) => {
+    if (!userData || !req.id) return;
+    try {
+      setLoading(true);
+      const myUid = userData.uid;
+      const friendUid = req.id;
+      const myDocRef = doc(db, "users", myUid);
+      const friendDocRef = doc(db, "users", friendUid);
+      await Promise.all([
+        updateDoc(myDocRef, {
+          outgoingFriendReq: arrayRemove(friendUid),
+        }),
+        updateDoc(friendDocRef, {
+          incomingFriendReq: arrayRemove(myUid),
+        })
+      ]);
+      alert(`You are now friends with ${req.name}!`);
+      setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
+      setFriendsList(prev => [...prev, { ...req, status: "Offline" }]);
+
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      alert("Failed to accept friend request. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddFriend = async (req) => {
+    if (!userData || !req.id) return;
+    try {
+      setLoading(true);
+      const myUid = userData.uid;
+      const friendUid = req.id;
+      const myDocRef = doc(db, "users", myUid);
+      const friendDocRef = doc(db, "users", friendUid);
+      await Promise.all([
+        updateDoc(myDocRef, {
+          outgoingFriendReq: arrayUnion(friendUid),
+        }),
+        updateDoc(friendDocRef, {
+          incomingFriendReq: arrayUnion(myUid),
+        })
+      ]);
+      alert(`You are now friends with ${req.name}!`);
+      setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
+      setFriendsList(prev => [...prev, { ...req, status: "Offline" }]);
+
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      alert("Failed to accept friend request. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredFriends = useMemo(() => {
     let list = [...friendsList];
-    
-    // Status Filter
     if (filter === "online") list = list.filter((f) => f.online);
-    
-    // Search Filter
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter((f) => 
-        f.name.toLowerCase().includes(q) || 
+      list = list.filter((f) =>
+        f.name.toLowerCase().includes(q) ||
         f.handle.toLowerCase().includes(q)
       );
     }
 
-    // Sort
     list.sort((a, b) => {
       if (sortBy === 'elo') return b.elo - a.elo;
       return a.name.localeCompare(b.name);
@@ -226,15 +339,12 @@ const FriendsPage = () => {
     ];
   }, [incomingReqs, outgoingReqs, search]);
 
-  // Search logic for "Add Friend" tab
-  // If search exists, we filter the loaded 'Top Players'. 
-  // Note: For a real app, you'd trigger a DB search query here.
   const addResults = useMemo(() => {
     if (!search.trim()) return discoverUsers;
     const q = search.toLowerCase();
-    return discoverUsers.filter((u) => 
-        u.name.toLowerCase().includes(q) || 
-        u.handle?.toLowerCase().includes(q)
+    return discoverUsers.filter((u) =>
+      u.name.toLowerCase().includes(q) ||
+      u.handle?.toLowerCase().includes(q)
     );
   }, [discoverUsers, search]);
 
@@ -436,7 +546,7 @@ const FriendsList = ({ friends, search, filter, setFilter, onInvite, onSpectate,
 
       <CardContent className="p-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-background shadow-sm">
         {loading ? (
-             <div className="h-full flex items-center justify-center text-zinc-500 text-sm">Loading friends...</div>
+          <div className="h-full flex items-center justify-center text-zinc-500 text-sm">Loading friends...</div>
         ) : friends?.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-sm text-zinc-400 text-center p-8">
             <div className="h-12 w-12 rounded-full bg-background flex items-center justify-center mb-4">
@@ -480,76 +590,87 @@ const FriendRow = ({ friend, onInvite, onSpectate, onMessage, onSelect }) => {
         : "bg-zinc-600"; // Grey for offline
 
   return (
-    <div
-      onClick={onSelect}
-      className="flex items-center justify-between px-6 py-4 hover:bg-background/50 transition-colors cursor-pointer group"
-    >
-      <div className="flex items-center gap-4">
-        {/* Avatar */}
-        <div className="relative">
-          <Avatar>
-            <AvatarImage src={`/avatars/${friend?.avatarUrl}`} />
-            <AvatarFallback>{friend?.name?.substring(0,2).toUpperCase()}</AvatarFallback>
-          </Avatar>
-          <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-zinc-950 ${statusColor}`} />
-        </div>
-
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium leading-none text-zinc-100 group-hover:text-zinc-300">
-              {friend?.name}
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-sm border font-medium uppercase tracking-wide
-                ${friend.rank === 'Gold' ? 'bg-amber-900/20 text-amber-400 border-amber-900/50' :
-                friend.rank === 'Diamond' ? 'bg-indigo-900/20 text-indigo-400 border-indigo-900/50' :
-                  friend.rank === 'Platinum' ? 'bg-cyan-900/20 text-cyan-400 border-cyan-900/50' :
-                    'bg-background text-zinc-400 border-zinc-700'
-              }
-            `}>
-              {friend?.rank}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 truncate max-w-[140px]">
-              {friend?.tagline}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-zinc-400 hover:text-zinc-50"
-          onClick={(e) => onMessage(friend, e)}
-          title="Message"
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <div
+          onClick={onSelect}
+          className="flex items-center justify-between px-6 py-4 hover:bg-secondary/50 transition-colors cursor-pointer group"
         >
-          <MessageCircle className="h-4 w-4" />
-        </Button>
 
-        {isDueling ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-8 px-3 gap-1.5 bg-amber-900/30 text-amber-400 hover:bg-amber-900/50"
-            onClick={(e) => onSpectate(friend, e)}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            <span className="text-xs">Spectate</span>
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            className="h-8 px-3 gap-1.5"
-            onClick={(e) => onInvite(friend, e)}
-          >
-            <Sword className="h-3.5 w-3.5" />
-            <span className="text-xs">Invite</span>
-          </Button>
-        )}
-      </div>
-    </div>
+          <div className="flex items-center gap-4">
+            {/* Avatar */}
+            <div className="relative">
+              <Avatar>
+                <AvatarImage src={`/avatars/${friend?.avatarUrl}`} />
+                <AvatarFallback>{friend?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-zinc-950 ${statusColor}`} />
+            </div>
+
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium leading-none text-zinc-100 group-hover:text-zinc-300">
+                  {friend?.name}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-sm border font-medium uppercase tracking-wide
+                ${friend.rank === 'Gold' ? 'bg-amber-900/20 text-amber-400 border-amber-900/50' :
+                    friend.rank === 'Diamond' ? 'bg-indigo-900/20 text-indigo-400 border-indigo-900/50' :
+                      friend.rank === 'Platinum' ? 'bg-cyan-900/20 text-cyan-400 border-cyan-900/50' :
+                        'bg-background text-zinc-400 border-zinc-700'
+                  }
+            `}>
+                  {friend?.rank}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-400 truncate max-w-[140px]">
+                  {friend?.tagline}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-zinc-400 hover:text-zinc-50"
+              onClick={(e) => onMessage(friend, e)}
+              title="Message"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </Button>
+
+            {isDueling ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-8 px-3 gap-1.5 bg-amber-900/30 text-amber-400 hover:bg-amber-900/50"
+                onClick={(e) => onSpectate(friend, e)}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                <span className="text-xs">Spectate</span>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-8 px-3 gap-1.5"
+                onClick={(e) => onInvite(friend, e)}
+              >
+                <Sword className="h-3.5 w-3.5" />
+                <span className="text-xs">Invite</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem><User />View Profile</ContextMenuItem>
+        <ContextMenuItem>Billing</ContextMenuItem>
+        <ContextMenuItem>Team</ContextMenuItem>
+        <ContextMenuItem><UserRoundX />Unfriend</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -566,7 +687,6 @@ const UserProfileModal = ({ user, onClose, onInvite }) => (
         <div className="h-20 w-20 rounded-full bg-background border-4 border-zinc-950 shadow-sm flex items-center justify-center text-2xl font-bold text-zinc-200 -mt-10 mb-4 relative z-10">
           <Avatar className="h-full w-full">
             <AvatarImage src={`/avatars/${user?.avatarUrl}`} className="rounded-full" />
-             <AvatarFallback>{user?.name?.substring(0,2).toUpperCase()}</AvatarFallback>
           </Avatar>
         </div>
 
@@ -590,8 +710,8 @@ const UserProfileModal = ({ user, onClose, onInvite }) => (
           <div className="text-center">
             <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Win Rate</div>
             <div className="text-lg font-bold text-emerald-500">
-               {user?.wins + user?.losses > 0 
-                ? Math.round((user?.wins / (user?.wins + user?.losses)) * 100) 
+              {user?.wins + user?.losses > 0
+                ? Math.round((user?.wins / (user?.wins + user?.losses)) * 100)
                 : 0}%
             </div>
           </div>
@@ -738,7 +858,7 @@ const AddFriendsView = ({ results, onAdd }) => {
   return (
     <Card className="h-full flex flex-col border-none shadow-none bg-transparent">
       <div className="pb-3 px-1">
-        <h3 className="text-sm font-medium text-zinc-100">Discover People</h3>
+        <h3 className="text-xl font-medium text-zinc-100">Discover People</h3>
       </div>
       <CardContent className="p-0 flex-1 rounded-xl border border-zinc-800 bg-background overflow-hidden shadow-sm">
         {results.length === 0 ? (
@@ -753,15 +873,17 @@ const AddFriendsView = ({ results, onAdd }) => {
                 >
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-full bg-background flex items-center justify-center text-[10px] font-bold text-zinc-400">
-                      {user.name.slice(0, 2).toUpperCase()}
+                      <Avatar className="h-full w-full">
+                        <AvatarImage src={`/avatars/${user?.avatarUrl}`} className="rounded-full" />
+                      </Avatar>
                     </div>
                     <div>
                       <p className="text-sm font-medium leading-none text-zinc-100">
                         {user.name}
                       </p>
-                       <p className="text-[11px] text-zinc-500 mt-1">
-                          {user.elo} ELO
-                        </p>
+                      <p className="text-[11px] text-zinc-500 mt-1">
+                        {user.elo} ELO
+                      </p>
                     </div>
                   </div>
                   <Button
