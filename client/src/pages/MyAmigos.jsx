@@ -13,7 +13,16 @@ import {
   Filter,
   ArrowLeft,
   User,
-  UserRoundX
+  UserRoundX,
+  MessageSquare,
+  GitCompare,
+  History,
+  Share2,
+  Pin,
+  Link,
+  Ban,
+  Flag,
+  UserMinus
 } from "lucide-react";
 import { Button } from '../../components/ui/button'
 import { Card, CardContent } from '../../components/ui/card'
@@ -37,7 +46,8 @@ import {
   limit,
   arrayRemove,
   arrayUnion,
-  updateDoc
+  updateDoc,
+  writeBatch
 } from "firebase/firestore";
 import {
   Avatar,
@@ -46,10 +56,27 @@ import {
 } from "../../components/ui/avatar"
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../../components/ui/context-menu"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../components/ui/alert-dialog";
 // --- UTILITY: Calculate Rank based on ELO ---
 const getRankFromElo = (elo) => {
   if (elo < 1200) return "Bronze";
@@ -59,8 +86,7 @@ const getRankFromElo = (elo) => {
   return "Diamond";
 };
 
-// --- UTILITY: Efficiently Fetch Users by ID Chunks ---
-// Firestore 'in' queries are limited to 10 items. This handles large lists.
+
 const fetchUserProfiles = async (uids) => {
   if (!uids || uids.length === 0) return [];
 
@@ -84,18 +110,13 @@ const fetchUserProfiles = async (uids) => {
           name: data.displayName || "Unknown",
           handle: data.userHandle || "@unknown",
           avatarUrl: data.avatarUrl,
-          // Map DB fields to UI fields
           tagline: data.bio || "No bio yet.",
           elo: data.elo || 0,
           rank: getRankFromElo(data.elo || 0),
           wins: data.wins || 0,
           losses: data.losses || 0,
-          languages: ["JavaScript"], // Default as it's not in DB schema provided
-          // Firestore doesn't have native "online" status without Realtime DB presence
-          // We default to false or check lastActive if you have that field
           status: "Offline",
           online: false,
-          mutual: 0 // Calculation would require checking friends of friends
         };
       });
     });
@@ -116,9 +137,8 @@ const FriendsPage = () => {
   const [friendsList, setFriendsList] = useState([]);
   const [incomingReqs, setIncomingReqs] = useState([]);
   const [outgoingReqs, setOutgoingReqs] = useState([]);
-  const [discoverUsers, setDiscoverUsers] = useState([]); // For "Add Friend" tab
+  const [discoverUsers, setDiscoverUsers] = useState([]);
 
-  // State for UI
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("friends");
   const [search, setSearch] = useState("");
@@ -206,16 +226,16 @@ const FriendsPage = () => {
       const friendUid = req.id;
       const myDocRef = doc(db, "users", myUid);
       const friendDocRef = doc(db, "users", friendUid);
-      await Promise.all([
-        updateDoc(myDocRef, {
-          incomingFriendReq: arrayRemove(friendUid),
-          friends: arrayUnion(friendUid)
-        }),
-        updateDoc(friendDocRef, {
-          outgoingFriendReq: arrayRemove(myUid),
-          friends: arrayUnion(myUid)
-        })
-      ]);
+      const batch = writeBatch(db);
+      batch.update(myDocRef, {
+        incomingFriendReq: arrayRemove(friendUid),
+        friends: arrayUnion(friendUid)
+      })
+      batch.update(friendDocRef, {
+        outgoingFriendReq: arrayRemove(myUid),
+        friends: arrayUnion(myUid)
+      });
+      await batch.commit();
       alert(`You are now friends with ${req.name}!`);
       setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
       setFriendsList(prev => [...prev, { ...req, status: "Offline" }]);
@@ -238,14 +258,14 @@ const FriendsPage = () => {
       const friendUid = req.id;
       const myDocRef = doc(db, "users", myUid);
       const friendDocRef = doc(db, "users", friendUid);
-      await Promise.all([
-        updateDoc(myDocRef, {
-          incomingFriendReq: arrayRemove(friendUid),
-        }),
-        updateDoc(friendDocRef, {
-          outgoingFriendReq: arrayRemove(myUid),
-        })
-      ]);
+      const batch = writeBatch(db);
+      batch.update(friendDocRef, {
+        outgoingFriendReq: arrayRemove(myUid),
+      })
+      batch.update(myDocRef, {
+        incomingFriendReq: arrayRemove(friendUid),
+      })
+      await batch.commit()
       alert(`You Ignored ${req.name}!`);
       setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
     } catch (error) {
@@ -264,18 +284,16 @@ const FriendsPage = () => {
       const friendUid = req.id;
       const myDocRef = doc(db, "users", myUid);
       const friendDocRef = doc(db, "users", friendUid);
-      await Promise.all([
-        updateDoc(myDocRef, {
-          outgoingFriendReq: arrayRemove(friendUid),
-        }),
-        updateDoc(friendDocRef, {
-          incomingFriendReq: arrayRemove(myUid),
-        })
-      ]);
+      const batch = writeBatch(db)
+      batch.update(myDocRef, {
+        outgoingFriendReq: arrayRemove(friendUid),
+      })
+      batch.update(friendDocRef, {
+        incomingFriendReq: arrayRemove(myUid),
+      })
+      batch.commit()
       alert(`You are now friends with ${req.name}!`);
-      setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
-      setFriendsList(prev => [...prev, { ...req, status: "Offline" }]);
-
+      setOutgoingReqs(prev => prev.filter(r => r.id !== friendUid));
     } catch (error) {
       console.error("Error accepting friend request:", error);
       alert("Failed to accept friend request. Please try again.");
@@ -292,18 +310,18 @@ const FriendsPage = () => {
       const friendUid = req.id;
       const myDocRef = doc(db, "users", myUid);
       const friendDocRef = doc(db, "users", friendUid);
-      await Promise.all([
-        updateDoc(myDocRef, {
-          outgoingFriendReq: arrayUnion(friendUid),
-        }),
-        updateDoc(friendDocRef, {
-          incomingFriendReq: arrayUnion(myUid),
-        })
-      ]);
-      alert(`You are now friends with ${req.name}!`);
-      setIncomingReqs(prev => prev.filter(r => r.id !== friendUid));
-      setFriendsList(prev => [...prev, { ...req, status: "Offline" }]);
+      const batch = writeBatch(db)
 
+      batch.update(myDocRef, {
+        outgoingFriendReq: arrayUnion(friendUid),
+      })
+      batch.update(friendDocRef, {
+        incomingFriendReq: arrayUnion(myUid),
+      })
+      batch.commit()
+      alert(`Friend request sent to ${req.name}!`); // FIXED MSG
+      setOutgoingReqs(prev => [...prev, req]);
+      setDiscoverUsers(prev => prev.filter(user => user.id !== friendUid));
     } catch (error) {
       console.error("Error accepting friend request:", error);
       alert("Failed to accept friend request. Please try again.");
@@ -311,6 +329,33 @@ const FriendsPage = () => {
       setLoading(false);
     }
   };
+
+  const handleDelete = async (req) => {
+    if (!userData || !req.id) return;
+    try {
+      setLoading(true);
+      const myUid = userData.uid;
+      const friendUid = req.id;
+      const myDocRef = doc(db, "users", myUid);
+      const friendDocRef = doc(db, "users", friendUid);
+      const batch = writeBatch(db)
+      batch.update(myDocRef, {
+        friends: arrayRemove(friendUid),
+      })
+
+      batch.update(friendDocRef, {
+        friends: arrayRemove(myUid),
+      })
+      batch.commit()
+      alert(`You are now friends with ${req.name}!`);
+      setFriendsList(prev => prev.filter(f => f.id !== friendUid));
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      alert("Failed to accept friend request. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const filteredFriends = useMemo(() => {
     let list = [...friendsList];
@@ -339,17 +384,28 @@ const FriendsPage = () => {
     ];
   }, [incomingReqs, outgoingReqs, search]);
 
-  const addResults = useMemo(() => {
-    if (!search.trim()) return discoverUsers;
+const addResults = useMemo(() => {
+   
+    const hiddenIds = new Set([
+      ...incomingReqs.map(req => req.id),
+      ...outgoingReqs.map(req => req.id),
+      ...friendsList.map(friend => friend.id)
+    ]);
+
+    // 2. Filter out the hidden users first
+    const visibleUsers = discoverUsers.filter(u => !hiddenIds.has(u.id));
+
+    // 3. Apply Search Logic
+    if (!search.trim()) return visibleUsers;
+    
     const q = search.toLowerCase();
-    return discoverUsers.filter((u) =>
+    return visibleUsers.filter((u) =>
       u.name.toLowerCase().includes(q) ||
       u.handle?.toLowerCase().includes(q)
     );
-  }, [discoverUsers, search]);
+  }, [discoverUsers, search, incomingReqs, outgoingReqs, friendsList]);
 
   const clearSearch = () => setSearch("");
-
   return (
     // Forced dark mode wrapper
     <div className="min-h-screen w-full flex bg-background text-zinc-50 font-sans dark">
@@ -456,6 +512,7 @@ const FriendsPage = () => {
               onInvite={handleInvite}
               onSpectate={handleSpectate}
               onMessage={handleMessage}
+              onRemove={handleDelete}
               onSelect={setSelectedFriend}
               loading={loading}
             />
@@ -514,7 +571,7 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, badge }) => (
 
 /* ---------- Friends list view ---------- */
 
-const FriendsList = ({ friends, search, filter, setFilter, onInvite, onSpectate, onMessage, onSelect, loading }) => {
+const FriendsList = ({ friends, search, filter, setFilter, onInvite, onSpectate, onRemove, onMessage, onSelect, loading }) => {
   const hasSearch = !!search.trim();
 
   return (
@@ -528,14 +585,6 @@ const FriendsList = ({ friends, search, filter, setFilter, onInvite, onSpectate,
               onClick={() => setFilter('all')}
             >
               All
-            </TabsTrigger>
-            <TabsTrigger
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${filter === 'online' ? 'bg-background text-zinc-50' : 'text-zinc-400 hover:text-zinc-200'}`}
-              value="online"
-              onClick={() => setFilter('online')}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${filter === 'online' ? 'bg-emerald-500' : 'bg-background'}`} />
-              Online
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -565,6 +614,7 @@ const FriendsList = ({ friends, search, filter, setFilter, onInvite, onSpectate,
                   key={friend?.id}
                   friend={friend}
                   onInvite={onInvite}
+                  onRemove={onRemove}
                   onSpectate={onSpectate}
                   onMessage={onMessage}
                   onSelect={() => onSelect(friend)}
@@ -578,7 +628,7 @@ const FriendsList = ({ friends, search, filter, setFilter, onInvite, onSpectate,
   );
 };
 
-const FriendRow = ({ friend, onInvite, onSpectate, onMessage, onSelect }) => {
+const FriendRow = ({ friend, onInvite, onSpectate, onMessage, onSelect, onRemove }) => {
   const isDueling = friend.status === "In a Duel";
   // Note: Since Firestore doesn't provide Realtime Online status easily, 
   // this defaults to offline unless you implement a presence system.
@@ -587,90 +637,173 @@ const FriendRow = ({ friend, onInvite, onSpectate, onMessage, onSelect }) => {
       ? "bg-emerald-500"
       : isDueling
         ? "bg-amber-400"
-        : "bg-zinc-600"; // Grey for offline
+        : "bg-zinc-600";
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger>
-        <div
-          onClick={onSelect}
-          className="flex items-center justify-between px-6 py-4 hover:bg-secondary/50 transition-colors cursor-pointer group"
-        >
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger>
+          <div
+            onClick={onSelect}
+            className="flex items-center justify-between px-6 py-4 hover:bg-secondary/50 transition-colors cursor-pointer group"
+          >
 
-          <div className="flex items-center gap-4">
-            {/* Avatar */}
-            <div className="relative">
-              <Avatar>
-                <AvatarImage src={`/avatars/${friend?.avatarUrl}`} />
-                <AvatarFallback>{friend?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-zinc-950 ${statusColor}`} />
-            </div>
+            <div className="flex items-center gap-4">
+              {/* Avatar */}
+              <div className="relative">
+                <Avatar>
+                  <AvatarImage src={`/avatars/${friend?.avatarUrl}`} />
+                  <AvatarFallback>{friend?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-zinc-950 ${statusColor}`} />
+              </div>
 
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium leading-none text-zinc-100 group-hover:text-zinc-300">
-                  {friend?.name}
-                </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-sm border font-medium uppercase tracking-wide
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium leading-none text-zinc-100 group-hover:text-zinc-300">
+                    {friend?.name}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-sm border font-medium uppercase tracking-wide
                 ${friend.rank === 'Gold' ? 'bg-amber-900/20 text-amber-400 border-amber-900/50' :
-                    friend.rank === 'Diamond' ? 'bg-indigo-900/20 text-indigo-400 border-indigo-900/50' :
-                      friend.rank === 'Platinum' ? 'bg-cyan-900/20 text-cyan-400 border-cyan-900/50' :
-                        'bg-background text-zinc-400 border-zinc-700'
-                  }
-            `}>
-                  {friend?.rank}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-400 truncate max-w-[140px]">
-                  {friend?.tagline}
-                </span>
+                      friend.rank === 'Diamond' ? 'bg-indigo-900/20 text-indigo-400 border-indigo-900/50' :
+                        friend.rank === 'Platinum' ? 'bg-cyan-900/20 text-cyan-400 border-cyan-900/50' :
+                          'bg-background text-zinc-400 border-zinc-700'
+                    }`}>
+                    {friend?.rank}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-400 truncate max-w-[140px]">
+                    {friend?.tagline}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-zinc-400 hover:text-zinc-50"
-              onClick={(e) => onMessage(friend, e)}
-              title="Message"
+            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-zinc-400 hover:text-zinc-50"
+                onClick={(e) => onMessage(friend, e)}
+                title="Message"
+              >
+                <MessageCircle className="h-4 w-4" />
+              </Button>
+
+              {isDueling ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 px-3 gap-1.5 bg-amber-900/30 text-amber-400 hover:bg-amber-900/50"
+                  onClick={(e) => onSpectate(friend, e)}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  <span className="text-xs">Spectate</span>
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="h-8 px-3 gap-1.5"
+                  onClick={(e) => onInvite(friend, e)}
+                >
+                  <Sword className="h-3.5 w-3.5" />
+                  <span className="text-xs">Invite</span>
+                </Button>
+              )}
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={(e) => onInvite(friend, e)}>
+            <Sword className="mr-2 h-4 w-4 text-amber-500" />
+            Challenge to Duel
+          </ContextMenuItem>
+          <ContextMenuItem onClick={(e) => onMessage(friend, e)}>
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Send Message
+          </ContextMenuItem>
+
+          <ContextMenuSeparator className="bg-zinc-800" />
+
+          {/* GROUP 2: COMPETITIVE ANALYSIS */}
+          <ContextMenuItem onClick={() => alert("Compare logic here")}>
+            <GitCompare className="mr-2 h-4 w-4" />
+            Compare Stats
+          </ContextMenuItem>
+
+          <ContextMenuItem onClick={() => alert("Show match history between you two")}>
+            <History className="mr-2 h-4 w-4" />
+            View Match History
+          </ContextMenuItem>
+
+          <ContextMenuSeparator className="bg-zinc-800" />
+
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Share2 className="mr-2 h-4 w-4" />
+              Share Profile
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-48 bg-zinc-950 border-zinc-800">
+              <ContextMenuItem onClick={() => navigator.clipboard.writeText(`https://myapp.com/u/${friend.handle}`)}>
+                <Link className="mr-2 h-4 w-4" />
+                Copy Profile Link
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => navigator.clipboard.writeText(friend.handle)}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy Handle
+              </ContextMenuItem>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+
+          <ContextMenuSeparator className="bg-zinc-800" />
+
+          <ContextMenuItem onClick={() => alert("Blocked")} className="text-zinc-400 focus:text-zinc-200">
+            <Ban className="mr-2 h-4 w-4" />
+            Block User
+          </ContextMenuItem>
+
+          <ContextMenuItem onClick={() => alert("Reported")} className="text-zinc-400 focus:text-zinc-200">
+            <Flag className="mr-2 h-4 w-4" />
+            Report
+          </ContextMenuItem>
+
+          <ContextMenuItem
+            onClick={() => { setShowDeleteDialog(true) }}
+            className="focus:bg-red-900/20"
+          >
+            <UserMinus className="mr-2 h-4 w-4" />
+            Remove Friend
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent className="bg-zinc-950 border-zinc-800 text-zinc-50">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              This will remove <span className="font-bold text-zinc-200">{friend.name}</span> from your friends list.
+              You will no longer be able to see their stats or invite them to duels.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-transparent border-zinc-700 hover:bg-zinc-800 hover:text-white">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                onRemove(friend);
+                setShowDeleteDialog(false);
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white border-0"
             >
-              <MessageCircle className="h-4 w-4" />
-            </Button>
-
-            {isDueling ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-8 px-3 gap-1.5 bg-amber-900/30 text-amber-400 hover:bg-amber-900/50"
-                onClick={(e) => onSpectate(friend, e)}
-              >
-                <Eye className="h-3.5 w-3.5" />
-                <span className="text-xs">Spectate</span>
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                className="h-8 px-3 gap-1.5"
-                onClick={(e) => onInvite(friend, e)}
-              >
-                <Sword className="h-3.5 w-3.5" />
-                <span className="text-xs">Invite</span>
-              </Button>
-            )}
-          </div>
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem><User />View Profile</ContextMenuItem>
-        <ContextMenuItem>Billing</ContextMenuItem>
-        <ContextMenuItem>Team</ContextMenuItem>
-        <ContextMenuItem><UserRoundX />Unfriend</ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+              Remove Friend
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 

@@ -148,20 +148,16 @@ const RoomPage = () => {
                     <div className="space-y-2">
                       <Label>Select Mode</Label>
                       <Select
+                        defaultValue="dsa"
                         onValueChange={(value) => {
                           setMode(value);
-                          console.log("Selected value:", value); // Check console to see it working
                         }}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select Mode" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="dsa">DSA</SelectItem>
-                          <SelectItem value="react">React</SelectItem>
-                          <SelectItem value="frontend">Frontend</SelectItem>
-                          <SelectItem value="open_challenge">
-                            Open Challenge
-                          </SelectItem>
+                          <SelectItem value="backend">Backend Questions</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
