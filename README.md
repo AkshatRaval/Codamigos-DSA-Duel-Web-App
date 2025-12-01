@@ -4,9 +4,9 @@ A lightweight web app for developers to face off in coding problems. DuelCode is
 
 ---
 
-## 🎯 What DuelCode Is
+## 🎯 What Codamigos Is
 
-DuelCode is a web application that pits two developers against each other on coding challenges. Each duel is:
+Codamigos is a web application that pits two developers against each other on coding challenges. Each duel is:
 
 * **Timed:** Adding an intense, competitive element.
 * **Automatically Judged:** Providing instant feedback.
