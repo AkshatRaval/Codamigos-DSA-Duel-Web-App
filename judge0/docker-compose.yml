@@ -1,0 +1,85 @@
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 100M
+
+services:
+  judge0:
+    image: small-judge0:latest
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "2358:2358"
+    privileged: true
+    environment:
+      # --- ADDED THIS MISSING VARIABLE ---
+      - JUDGE0_VERSION=1.13.0
+      # -----------------------------------
+      - RAILS_ENV=production
+      - RAILS_LOG_TO_STDOUT=true
+      - JUDGE0_SANDBOX_IMAGE=small-judge0:latest
+      - REDIS_PASSWORD=judge0
+      - POSTGRES_PASSWORD=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_DB=judge0
+      - POSTGRES_HOST=db
+      - REDIS_HOST=redis
+      - SECRET_KEY_BASE=3b7e651838e146740673322154a413d320576356778641551061732551341013
+    command: ["./scripts/server"]
+    <<: *default-logging
+    restart: always
+
+  workers:
+    image: small-judge0:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      # REMOVED THE VOLUME LINE HERE
+    privileged: true
+    environment:
+      - JUDGE0_VERSION=1.13.0
+      - RAILS_ENV=production
+      - JUDGE0_SANDBOX_IMAGE=small-judge0:latest
+      - REDIS_PASSWORD=judge0
+      - POSTGRES_PASSWORD=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_DB=judge0
+      - POSTGRES_HOST=db
+      - REDIS_HOST=redis
+    command: ["./scripts/workers"]
+    <<: *default-logging
+    restart: always
+
+  db:
+    image: postgres:16.2
+    environment:
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0
+      - POSTGRES_DB=judge0
+    volumes:
+      - postgres-data:/var/lib/postgresql/data/
+    <<: *default-logging
+    restart: always
+
+  redis:
+    image: redis:7.2.4
+    command: ["redis-server", "--requirepass", "judge0", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    <<: *default-logging
+    restart: always
+
+  compilers:
+    build:
+      context: .
+      dockerfile: Dockerfile.compilers
+    image: small-judge0:latest
+    command: ["echo", "Compiler image built"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  postgres-data:
+  redis-data:

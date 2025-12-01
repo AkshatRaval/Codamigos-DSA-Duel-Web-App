@@ -1,0 +1,37 @@
+FROM ruby:3.2-slim
+
+# 1. Install System Dependencies (Minimal)
+# libpq-dev: for Postgres
+# libcap-dev: for Isolate
+# git/build-essential: for compiling gems and isolate
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    build-essential \
+    libpq-dev \
+    libcap-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Install Isolate (The Sandbox Engine)
+# This is required for the worker to function
+RUN git clone https://github.com/ioi/isolate.git /tmp/isolate && \
+    cd /tmp/isolate && \
+    make isolate && \
+    make install && \
+    rm -rf /tmp/isolate
+
+# 3. Setup Judge0 Application
+WORKDIR /judge0
+
+# Clone the latest stable version of Judge0
+# We use depth 1 to save space (no git history)
+RUN git clone --depth 1 https://github.com/judge0/judge0.git .
+
+# 4. Install Ruby Dependencies
+RUN bundle config set --local without 'development test' && \
+    bundle install --jobs 4 --retry 3
+
+# 5. Expose Ports and Define Entrypoint
+EXPOSE 2358
+CMD ["./scripts/run-server"]

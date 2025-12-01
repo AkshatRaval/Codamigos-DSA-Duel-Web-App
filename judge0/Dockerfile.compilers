@@ -1,0 +1,79 @@
+# BACK TO RUBY 3.2 (Compiles Isolate correctly)
+FROM ruby:3.2-slim
+
+# 1. Install System Dependencies
+RUN apt-get update && apt-get install -y \
+    curl gnupg build-essential libpq-dev libcap-dev git \
+    python3 python3-pip \
+    default-jdk \
+    docker.io \
+    pkg-config libsystemd-dev sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Install Isolate
+RUN git clone https://github.com/ioi/isolate.git /tmp/isolate && \
+    cd /tmp/isolate && \
+    make isolate && \
+    make install && \
+    rm -rf /tmp/isolate
+
+# --- FIX 1: AGGRESSIVE WRAPPER SCRIPT ---
+RUN mv /usr/local/bin/isolate /usr/local/bin/isolate-real
+RUN printf '#!/bin/bash\n\
+args=()\n\
+for arg in "$@"; do\n\
+  case $arg in\n\
+    --cg*) ;;\n\
+    *) args+=("$arg") ;;\n\
+  esac\n\
+done\n\
+exec /usr/local/bin/isolate-real "${args[@]}"\n' > /usr/local/bin/isolate
+RUN chmod +x /usr/local/bin/isolate
+
+# --- FIX 2: FORCE SUID ---
+RUN chmod 4755 /usr/local/bin/isolate-real
+
+# 3. Download Source Code
+WORKDIR /judge0
+RUN git clone --depth 1 https://github.com/judge0/judge0.git .
+
+# --- FIX 3: PATCH RUBY CODE ---
+RUN grep -rl "Dir.exists?" . | xargs sed -i 's/Dir.exists?/Dir.exist?/g'
+
+# --- FIX 4: CLEANUP GEMS ---
+RUN sed -i '/pry/d' Gemfile
+
+# 4. Create User
+RUN useradd -d /judge0 -s /bin/bash judge0
+
+# --- FIX 5: SUDO PERMISSIONS ---
+RUN echo "judge0 ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# --- FIX 6: CREATE SHORTCUTS (Fixes "No such file" error) ---
+# Redirect the database's expected Python path to the real one
+RUN mkdir -p /usr/local/python-3.8.1/bin
+RUN ln -s /usr/bin/python3 /usr/local/python-3.8.1/bin/python3
+
+# Redirect Java (Just in case you use it)
+RUN mkdir -p /usr/local/openjdk13/bin
+RUN ln -s /usr/bin/java /usr/local/openjdk13/bin/java
+RUN ln -s /usr/bin/javac /usr/local/openjdk13/bin/javac
+
+# Redirect GCC (C/C++)
+RUN mkdir -p /usr/local/gcc-9.2.0/bin
+RUN ln -s /usr/bin/gcc /usr/local/gcc-9.2.0/bin/gcc
+RUN ln -s /usr/bin/g++ /usr/local/gcc-9.2.0/bin/g++
+# -----------------------------------------------------------
+
+# 5. Install Ruby Libraries
+ENV RAILS_ENV=production
+RUN bundle config set --local without 'development test' && \
+    bundle install --jobs 4 --retry 3
+
+# 6. Permissions
+RUN mkdir -p /var/local/lib/isolate
+RUN chown -R judge0:judge0 /var/local/lib/isolate
+RUN chown -R judge0:judge0 /judge0
+RUN chmod +x ./scripts/*
+
+EXPOSE 2358
