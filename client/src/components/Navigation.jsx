@@ -22,8 +22,7 @@ const navLinks = [
   { name: "Leaderboard", path: "/leaderboard" },
   { name: "About", path: "/about-us" },
 ];
-import { useAuth } from "../lib/AuthProvider";
-import { LogOut, User } from "lucide-react";
+import { useAuth } from "../lib/AuthProvider";import { LogOut, User } from "lucide-react";
 
 export default function Navigation() {
   const navigate = useNavigate();
@@ -168,7 +167,7 @@ export default function Navigation() {
               <Button
                 onClick={() => {
                   setOpen(false);
-                  navigate("/login");
+                  navigate("/auth");
                 }}
                 className="w-full"
               >
@@ -178,7 +177,7 @@ export default function Navigation() {
                 variant="outline"
                 onClick={() => {
                   setOpen(false);
-                  navigate("/signup");
+                  navigate("/auth");
                 }}
                 className="w-full"
               >

@@ -1,6 +1,5 @@
 import React from "react";
 import { ThemeProvider } from "../components/theme-provider";
-import { Badge } from "../components/ui/badge";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Home from "./pages/Home";
 import MainLayout from "./components/MainLayout";
@@ -14,6 +13,7 @@ import { Toaster } from "react-hot-toast";
 import Profile from "./pages/Profile.jsx";
 import CodingArea from "./pages/CodingArea.jsx";
 import MyAmigos from "./pages/MyAmigos.jsx";
+import Leaderboard from "./pages/LeaderBoard.jsx";
 
 const App = () => {
   const isMobile = () => {
@@ -43,6 +43,7 @@ const App = () => {
               <Route path="about-us" element={<AboutUs />} />
               <Route path="auth" element={<LoginSignup />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="leaderboard" element={<Leaderboard />} />
             </Route>
               <Route path="myamigos" element={<MyAmigos />} />
               <Route path="/room/:code" element={<CodingArea />} />
