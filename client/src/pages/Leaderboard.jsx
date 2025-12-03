@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from "../../components/ui/card.jsx";
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import { db } from "../../firebase.js";
+import { RefreshCw } from "lucide-react";
 
 const Leaderboard = () => {
   const [discoverUsers, setDiscoverUsers] = useState([]);
@@ -55,13 +56,11 @@ const Leaderboard = () => {
     fetchTopPlayers();
   }, [fetchTopPlayers]);
 
-  // defensive sort by score descending
   const sorted = [...discoverUsers].sort((a, b) => b.score - a.score);
   const totalItems = sorted.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const empty = totalItems === 0;
 
-  // keep page in range
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
@@ -109,7 +108,7 @@ const Leaderboard = () => {
             className="px-3 py-2 rounded-md bg-white/6 hover:bg-white/10 transition text-sm"
             aria-label="Refresh leaderboard"
           >
-            Refresh
+            <RefreshCw size={15} /> 
           </button>
 
           <div className="text-sm text-neutral-300">
