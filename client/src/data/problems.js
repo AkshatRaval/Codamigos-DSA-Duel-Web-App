@@ -389,5 +389,341 @@ export const dataset = [
       "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\ndouble findMedianSortedArrays(vector<int>& nums1, vector<int>& nums2) {\n    // Write your code here\n}\n",
       "java": "class Solution {\n    public double findMedianSortedArrays(int[] nums1, int[] nums2) {\n        // Write your code here\n    }\n}\n"
     }
+  },
+  {
+    "id": "two-sum",
+    "title": "Two Sum",
+    "difficulty": "easy",
+    "tags": ["array", "hash-table"],
+    "statement": "Given an array of integers 'nums' and an integer 'target', return indices of the two numbers such that they add up to 'target'. You may assume that each input would have exactly one solution, and you may not use the same element twice. You can return the answer in any order.",
+    "constraints": [
+      "2 <= nums.length <= 10^4",
+      "-10^9 <= nums[i] <= 10^9",
+      "-10^9 <= target <= 10^9",
+      "Only one valid answer exists."
+    ],
+    "samples": [
+      {
+        "input": "nums = [2,7,11,15], target = 9",
+        "output": "[0,1]",
+        "explanation": "Because nums[0] + nums[1] == 9, we return [0, 1]."
+      },
+      {
+        "input": "nums = [3,2,4], target = 6",
+        "output": "[1,2]"
+      }
+    ],
+    "tests": [
+      { "input": "[2,7,11,15]\n9", "output": "[0,1]" },
+      { "input": "[3,2,4]\n6", "output": "[1,2]" },
+      { "input": "[3,3]\n6", "output": "[0,1]" }
+    ],
+    "starterCode": {
+      "javascript": "function twoSum(nums, target) {\n  // Write your code here\n}\n",
+      "python": "def twoSum(nums, target):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nvector<int> twoSum(vector<int>& nums, int target) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "maximum-subarray",
+    "title": "Maximum Subarray",
+    "difficulty": "medium",
+    "tags": ["array", "divide-and-conquer", "dynamic-programming"],
+    "statement": "Given an integer array 'nums', find the contiguous subarray (containing at least one number) which has the largest sum and return its sum.",
+    "constraints": [
+      "1 <= nums.length <= 10^5",
+      "-10^4 <= nums[i] <= 10^4"
+    ],
+    "samples": [
+      {
+        "input": "nums = [-2,1,-3,4,-1,2,1,-5,4]",
+        "output": "6",
+        "explanation": "The subarray [4,-1,2,1] has the largest sum = 6."
+      },
+      {
+        "input": "nums = [1]",
+        "output": "1"
+      }
+    ],
+    "tests": [
+      { "input": "[-2,1,-3,4,-1,2,1,-5,4]", "output": "6" },
+      { "input": "[1]", "output": "1" },
+      { "input": "[5,4,-1,7,8]", "output": "23" },
+      { "input": "[-1]", "output": "-1" }
+    ],
+    "starterCode": {
+      "javascript": "function maxSubArray(nums) {\n  // Write your code here\n}\n",
+      "python": "def maxSubArray(nums):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint maxSubArray(vector<int>& nums) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public int maxSubArray(int[] nums) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "invert-binary-tree",
+    "title": "Invert Binary Tree",
+    "difficulty": "easy",
+    "tags": ["tree", "dfs", "bfs", "binary-tree"],
+    "statement": "Given the 'root' of a binary tree, invert the tree, and return its root.",
+    "constraints": [
+      "The number of nodes in the tree is in the range [0, 100].",
+      "-100 <= Node.val <= 100"
+    ],
+    "samples": [
+      {
+        "input": "root = [4,2,7,1,3,6,9]",
+        "output": "[4,7,2,9,6,3,1]"
+      },
+      {
+        "input": "root = [2,1,3]",
+        "output": "[2,3,1]"
+      }
+    ],
+    "tests": [
+      { "input": "[4,2,7,1,3,6,9]", "output": "[4,7,2,9,6,3,1]" },
+      { "input": "[2,1,3]", "output": "[2,3,1]" },
+      { "input": "[]", "output": "[]" }
+    ],
+    "starterCode": {
+      "javascript": "/**\n * Definition for a binary tree node.\n * function TreeNode(val, left, right) {\n * this.val = (val===undefined ? 0 : val)\n * this.left = (left===undefined ? null : left)\n * this.right = (right===undefined ? null : right)\n * }\n */\nfunction invertTree(root) {\n  // Write your code here\n}\n",
+      "python": "# Definition for a binary tree node.\n# class TreeNode:\n#     def __init__(self, val=0, left=None, right=None):\n#         self.val = val\n#         self.left = left\n#         self.right = right\ndef invertTree(root):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nstruct TreeNode {\n    int val;\n    TreeNode *left;\n    TreeNode *right;\n    TreeNode() : val(0), left(nullptr), right(nullptr) {}\n    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}\n    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}\n};\n\nTreeNode* invertTree(TreeNode* root) {\n    // Write your code here\n}\n",
+      "java": "/**\n * Definition for a binary tree node.\n * public class TreeNode {\n * int val;\n * TreeNode left;\n * TreeNode right;\n * TreeNode() {}\n * TreeNode(int val) { this.val = val; }\n * TreeNode(int val, TreeNode left, TreeNode right) {\n * this.val = val;\n * this.left = left;\n * this.right = right;\n * }\n * }\n */\nclass Solution {\n    public TreeNode invertTree(TreeNode root) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "valid-anagram",
+    "title": "Valid Anagram",
+    "difficulty": "easy",
+    "tags": ["string", "hash-table", "sorting"],
+    "statement": "Given two strings 's' and 't', return true if 't' is an anagram of 's', and false otherwise. An Anagram is a word or phrase formed by rearranging the letters of a different word or phrase, typically using all the original letters exactly once.",
+    "constraints": [
+      "1 <= s.length, t.length <= 5 * 10^4",
+      "s and t consist of lowercase English letters."
+    ],
+    "samples": [
+      {
+        "input": "s = \"anagram\", t = \"nagaram\"",
+        "output": "true"
+      },
+      {
+        "input": "s = \"rat\", t = \"car\"",
+        "output": "false"
+      }
+    ],
+    "tests": [
+      { "input": "\"anagram\"\n\"nagaram\"", "output": "true" },
+      { "input": "\"rat\"\n\"car\"", "output": "false" },
+      { "input": "\"a\"\n\"ab\"", "output": "false" },
+      { "input": "\"listen\"\n\"silent\"", "output": "true" }
+    ],
+    "starterCode": {
+      "javascript": "function isAnagram(s, t) {\n  // Write your code here\n}\n",
+      "python": "def isAnagram(s, t):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nbool isAnagram(string s, string t) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public boolean isAnagram(String s, String t) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "group-anagrams",
+    "title": "Group Anagrams",
+    "difficulty": "medium",
+    "tags": ["string", "hash-table", "sorting"],
+    "statement": "Given an array of strings 'strs', group the anagrams together. You can return the answer in any order.",
+    "constraints": [
+      "1 <= strs.length <= 10^4",
+      "0 <= strs[i].length <= 100",
+      "strs[i] consists of lowercase English letters."
+    ],
+    "samples": [
+      {
+        "input": "strs = [\"eat\",\"tea\",\"tan\",\"ate\",\"nat\",\"bat\"]",
+        "output": "[[\"bat\"],[\"nat\",\"tan\"],[\"ate\",\"eat\",\"tea\"]]"
+      },
+      {
+        "input": "strs = [\"\"]",
+        "output": "[[\"\"]]"
+      }
+    ],
+    "tests": [
+      { "input": "[\"eat\",\"tea\",\"tan\",\"ate\",\"nat\",\"bat\"]", "output": "[[\"bat\"],[\"nat\",\"tan\"],[\"ate\",\"eat\",\"tea\"]]" },
+      { "input": "[\"a\"]", "output": "[[\"a\"]]" },
+      { "input": "[\"\"]", "output": "[[\"\"]]" }
+    ],
+    "starterCode": {
+      "javascript": "function groupAnagrams(strs) {\n  // Write your code here\n}\n",
+      "python": "def groupAnagrams(strs):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nvector<vector<string>> groupAnagrams(vector<string>& strs) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public List<List<String>> groupAnagrams(String[] strs) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "number-of-islands",
+    "title": "Number of Islands",
+    "difficulty": "medium",
+    "tags": ["array", "dfs", "bfs", "union-find", "matrix"],
+    "statement": "Given an 'm x n' 2D binary grid 'grid' which represents a map of '1's (land) and '0's (water), return the number of islands. An island is surrounded by water and is formed by connecting adjacent lands horizontally or vertically. You may assume all four edges of the grid are all surrounded by water.",
+    "constraints": [
+      "m == grid.length",
+      "n == grid[i].length",
+      "1 <= m, n <= 300",
+      "grid[i][j] is '0' or '1'."
+    ],
+    "samples": [
+      {
+        "input": "grid = [[\"1\",\"1\",\"1\",\"1\",\"0\"],[\"1\",\"1\",\"0\",\"1\",\"0\"],[\"1\",\"1\",\"0\",\"0\",\"0\"],[\"0\",\"0\",\"0\",\"0\",\"0\"]]",
+        "output": "1"
+      },
+      {
+        "input": "grid = [[\"1\",\"1\",\"0\",\"0\",\"0\"],[\"1\",\"1\",\"0\",\"0\",\"0\"],[\"0\",\"0\",\"1\",\"0\",\"0\"],[\"0\",\"0\",\"0\",\"1\",\"1\"]]",
+        "output": "3"
+      }
+    ],
+    "tests": [
+      { "input": "[[\"1\",\"1\",\"1\",\"1\",\"0\"],[\"1\",\"1\",\"0\",\"1\",\"0\"],[\"1\",\"1\",\"0\",\"0\",\"0\"],[\"0\",\"0\",\"0\",\"0\",\"0\"]]", "output": "1" },
+      { "input": "[[\"1\",\"1\",\"0\",\"0\",\"0\"],[\"1\",\"1\",\"0\",\"0\",\"0\"],[\"0\",\"0\",\"1\",\"0\",\"0\"],[\"0\",\"0\",\"0\",\"1\",\"1\"]]", "output": "3" },
+      { "input": "[[\"0\"]]", "output": "0" }
+    ],
+    "starterCode": {
+      "javascript": "function numIslands(grid) {\n  // Write your code here\n}\n",
+      "python": "def numIslands(grid):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint numIslands(vector<vector<char>>& grid) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public int numIslands(char[][] grid) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "container-with-most-water",
+    "title": "Container With Most Water",
+    "difficulty": "medium",
+    "tags": ["array", "two-pointers", "greedy"],
+    "statement": "You are given an integer array 'height' of length 'n'. There are 'n' vertical lines drawn such that the two endpoints of the 'i-th' line are '(i, 0)' and '(i, height[i])'. Find two lines that together with the x-axis form a container, such that the container contains the most water. Return the maximum amount of water a container can store.",
+    "constraints": [
+      "n == height.length",
+      "2 <= n <= 10^5",
+      "0 <= height[i] <= 10^4"
+    ],
+    "samples": [
+      {
+        "input": "height = [1,8,6,2,5,4,8,3,7]",
+        "output": "49",
+        "explanation": "The max area is 49 (height 7 * width 7)."
+      },
+      {
+        "input": "height = [1,1]",
+        "output": "1"
+      }
+    ],
+    "tests": [
+      { "input": "[1,8,6,2,5,4,8,3,7]", "output": "49" },
+      { "input": "[1,1]", "output": "1" },
+      { "input": "[4,3,2,1,4]", "output": "16" },
+      { "input": "[1,2,1]", "output": "2" }
+    ],
+    "starterCode": {
+      "javascript": "function maxArea(height) {\n  // Write your code here\n}\n",
+      "python": "def maxArea(height):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint maxArea(vector<int>& height) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public int maxArea(int[] height) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "search-in-rotated-sorted-array",
+    "title": "Search in Rotated Sorted Array",
+    "difficulty": "medium",
+    "tags": ["array", "binary-search"],
+    "statement": "There is an integer array 'nums' sorted in ascending order (with distinct values). Prior to being passed to your function, 'nums' is possibly rotated at an unknown pivot index 'k' (1 <= k < nums.length). Given the array 'nums' after the possible rotation and an integer 'target', return the index of 'target' if it is in 'nums', or '-1' if it is not in 'nums'. You must write an algorithm with O(log n) runtime complexity.",
+    "constraints": [
+      "1 <= nums.length <= 5000",
+      "-10^4 <= nums[i] <= 10^4",
+      "All values of nums are unique.",
+      "nums is an ascending array that is possibly rotated.",
+      "-10^4 <= target <= 10^4"
+    ],
+    "samples": [
+      {
+        "input": "nums = [4,5,6,7,0,1,2], target = 0",
+        "output": "4"
+      },
+      {
+        "input": "nums = [4,5,6,7,0,1,2], target = 3",
+        "output": "-1"
+      }
+    ],
+    "tests": [
+      { "input": "[4,5,6,7,0,1,2]\n0", "output": "4" },
+      { "input": "[4,5,6,7,0,1,2]\n3", "output": "-1" },
+      { "input": "[1]\n0", "output": "-1" }
+    ],
+    "starterCode": {
+      "javascript": "function search(nums, target) {\n  // Write your code here\n}\n",
+      "python": "def search(nums, target):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint search(vector<int>& nums, int target) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public int search(int[] nums, int target) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "longest-palindromic-substring",
+    "title": "Longest Palindromic Substring",
+    "difficulty": "medium",
+    "tags": ["string", "dynamic-programming"],
+    "statement": "Given a string 's', return the longest palindromic substring in 's'.",
+    "constraints": [
+      "1 <= s.length <= 1000",
+      "s consist of only digits and English letters."
+    ],
+    "samples": [
+      {
+        "input": "s = \"babad\"",
+        "output": "\"bab\"",
+        "explanation": "\"aba\" is also a valid answer."
+      },
+      {
+        "input": "s = \"cbbd\"",
+        "output": "\"bb\""
+      }
+    ],
+    "tests": [
+      { "input": "\"babad\"", "output": "\"bab\"" },
+      { "input": "\"cbbd\"", "output": "\"bb\"" },
+      { "input": "\"a\"", "output": "\"a\"" },
+      { "input": "\"ac\"", "output": "\"a\"" }
+    ],
+    "starterCode": {
+      "javascript": "function longestPalindrome(s) {\n  // Write your code here\n}\n",
+      "python": "def longestPalindrome(s):\n    # Write your code here\n    pass\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nstring longestPalindrome(string s) {\n    // Write your code here\n}\n",
+      "java": "class Solution {\n    public String longestPalindrome(String s) {\n        // Write your code here\n    }\n}\n"
+    }
+  },
+  {
+    "id": "serialize-and-deserialize-binary-tree",
+    "title": "Serialize and Deserialize Binary Tree",
+    "difficulty": "hard",
+    "tags": ["tree", "design", "string", "bfs", "dfs"],
+    "statement": "Serialization is the process of converting a data structure or object into a sequence of bits so that it can be stored in a file or memory buffer, or transmitted across a network connection link to be reconstructed later in the same or another computer environment. Design an algorithm to serialize and deserialize a binary tree. There is no restriction on how your serialization/deserialization algorithm should work. You just need to ensure that a binary tree can be serialized to a string and this string can be deserialized to the original tree structure.",
+    "constraints": [
+      "The number of nodes in the tree is in the range [0, 10^4].",
+      "-1000 <= Node.val <= 1000"
+    ],
+    "samples": [
+      {
+        "input": "root = [1,2,3,null,null,4,5]",
+        "output": "[1,2,3,null,null,4,5]"
+      },
+      {
+        "input": "root = []",
+        "output": "[]"
+      }
+    ],
+    "tests": [
+      { "input": "[1,2,3,null,null,4,5]", "output": "[1,2,3,null,null,4,5]" },
+      { "input": "[]", "output": "[]" }
+    ],
+    "starterCode": {
+      "javascript": "/**\n * Definition for a binary tree node.\n * function TreeNode(val) {\n * this.val = val;\n * this.left = this.right = null;\n * }\n */\n\n/**\n * Encodes a tree to a single string.\n * \n * @param {TreeNode} root\n * @return {string}\n */\nvar serialize = function(root) {\n    // Write your code here\n};\n\n/**\n * Decodes your encoded data to tree.\n * \n * @param {string} data\n * @return {TreeNode}\n */\nvar deserialize = function(data) {\n    // Write your code here\n};\n",
+      "python": "# Definition for a binary tree node.\n# class TreeNode(object):\n#     def __init__(self, x):\n#         self.val = x\n#         self.left = None\n#         self.right = None\n\nclass Codec:\n\n    def serialize(self, root):\n        \"\"\"Encodes a tree to a single string.\n        \n        :type root: TreeNode\n        :rtype: str\n        \"\"\"\n        # Write your code here\n        pass\n        \n\n    def deserialize(self, data):\n        \"\"\"Decodes your encoded data to tree.\n        \n        :type data: str\n        :rtype: TreeNode\n        \"\"\"\n        # Write your code here\n        pass\n        \n\n# Your Codec object will be instantiated and called as such:\n# ser = Codec()\n# deser = Codec()\n# ans = deser.deserialize(ser.serialize(root))\n",
+      "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nstruct TreeNode {\n    int val;\n    TreeNode *left;\n    TreeNode *right;\n    TreeNode(int x) : val(x), left(NULL), right(NULL) {}\n};\n\nclass Codec {\npublic:\n\n    // Encodes a tree to a single string.\n    string serialize(TreeNode* root) {\n        // Write your code here\n    }\n\n    // Decodes your encoded data to tree.\n    TreeNode* deserialize(string data) {\n        // Write your code here\n    }\n};\n",
+      "java": "/**\n * Definition for a binary tree node.\n * public class TreeNode {\n * int val;\n * TreeNode left;\n * TreeNode right;\n * TreeNode(int x) { val = x; }\n * }\n */\npublic class Codec {\n\n    // Encodes a tree to a single string.\n    public String serialize(TreeNode root) {\n        // Write your code here\n    }\n\n    // Decodes your encoded data to tree.\n    public TreeNode deserialize(String data) {\n        // Write your code here\n    }\n}\n"
+    }
   }
-]
+];
