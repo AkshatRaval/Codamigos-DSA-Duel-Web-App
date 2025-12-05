@@ -1,3 +1,5 @@
+// Imports
+
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     ResizableHandle,
@@ -8,7 +10,6 @@ import Editor from '@monaco-editor/react'
 import {
     Sheet,
     SheetContent,
-    SheetFooter,
     SheetHeader,
     SheetTitle,
     SheetTrigger,
@@ -16,7 +17,7 @@ import {
 import { Button } from '../../components/ui/button'
 import { BsChatRightTextFill } from "react-icons/bs";
 import { Input } from '../../components/ui/input'
-import { DoorOpen, Link, RotateCcw, Send, Terminal, Play, Loader2, PlayCircle, Lock, ListTodo } from 'lucide-react';
+import { DoorOpen, Link, RotateCcw, Send, Terminal, Play, Loader2, PlayCircle, Lock, ListTodo, Check, LoaderPinwheel } from 'lucide-react';
 import {
     Tooltip,
     TooltipContent,
@@ -31,14 +32,17 @@ import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, rtdb } from '../../firebase'
-import { get, ref, remove, onValue, push, update } from 'firebase/database' // Added 'update'
+import { get, ref, remove, onValue, push, update } from 'firebase/database'
 import { FaCrown, FaUser } from 'react-icons/fa'
 import { useAuth } from '../lib/AuthProvider'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import api from '../lib/api.js'
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar.jsx'
-// Helper to format time (MM:SS)
+import { ButtonGroup, ButtonGroupSeparator } from '../../components/ui/button-group.jsx'
+
+// Helper Functions
+
 const formatTime = (seconds) => {
     if (seconds <= 0) return "00:00";
     const mins = Math.floor(seconds / 60);
@@ -46,6 +50,8 @@ const formatTime = (seconds) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+
+// Main Function
 const CodingArea = () => {
     const navigate = useNavigate()
     const { code } = useParams()
@@ -57,9 +63,12 @@ const CodingArea = () => {
     const [editorCode, setEditorCode] = useState("");
     const [messages, setMessages] = useState([]);
     const [chatInput, setChatInput] = useState("");
-    const [timeLeft, setTimeLeft] = useState(45 * 60); // Default 45 mins
+    const [timeLeft, setTimeLeft] = useState(45 * 60);
     const [isRunning, setIsRunning] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [activeProblemId, setActiveProblemId] = useState(null);
+    const [testResults, setTestResults] = useState([]);
+
     // Problem Data
     useEffect(() => {
         if (roomData?.problems?.length > 0 && !activeProblemId) {
@@ -165,6 +174,7 @@ const CodingArea = () => {
         setEditorCode(value || "");
     }
 
+
     const handleSendMessage = async () => {
         if (!chatInput.trim()) return;
         const messagesRef = ref(rtdb, `rooms/${code}/messages`);
@@ -177,21 +187,71 @@ const CodingArea = () => {
         setChatInput("");
     };
 
+    const [submissionToken, setSubmissionToken] = useState("")
     const handleRunCode = async () => {
+        setIsRunning(true);
+        setTestResults([]); // Clear previous results
+
+        const lang = languages.find((lang) => lang.value === selectedLanguage);
+        const lang_id = lang ? lang.languageCode : 63; // Default JS
+
+        // 1. Prepare Batch Submissions
+        const submissions = testcases.map((testCase) => ({
+            language_id: lang_id,
+            source_code: editorCode,
+            stdin: testCase.input,
+            expected_output: testCase.output
+        }));
+
         try {
-            const res = await api.post('/api/judge0/run-code', // Frontend Payload
-                {
-                    language_id: 71,
-                    stdin: "10 20",
-                    source_code: "import sys\na, b = map(int, sys.stdin.read().split())\nprint(a + b)",
-                    expected_output: "80"
-                }
-            )
-            console.log(res.data)
+            const res = await api.post('/api/judge0/run-code/batch', { submissions });
+            const rawData = Array.isArray(res.data) ? res.data : [res.data];
+            const tokens = rawData.map(t => t.token);
+
+            await checkBatchStatus(tokens);
+
         } catch (error) {
-            console.log(error)
+            console.error(error);
+            toast.error("Execution failed to start");
+            setIsRunning(false);
         }
     };
+
+    const checkBatchStatus = async (tokens) => {
+        const tokenString = tokens.join(',');
+
+        try {
+            // Call your backend which calls Judge0: GET /submissions/batch?tokens=...&fields=token,stdout,stderr,status_id,compile_output
+            const res = await api.get(`/api/judge0/check-batch?tokens=${tokenString}`);
+            const results = res.data.submissions; // Assuming Judge0 structure
+
+            // Status ID 1 or 2 means In Queue/Processing. >= 3 means Done.
+            const isPending = results.some(r => r.status.id <= 2);
+
+            if (isPending) {
+                // Keep polling after 2 seconds
+                setTimeout(() => checkBatchStatus(tokens), 2000);
+            } else {
+                // All done! Update state
+                setTestResults(results);
+                setIsRunning(false);
+
+                // Optional: Show toast summary
+                const passed = results.filter(r => r.status.id === 3).length; // 3 = Accepted
+                if (passed === results.length) toast.success("All Test Cases Passed!");
+                else toast.error(`${results.length - passed} Test Cases Failed`);
+            }
+        } catch (error) {
+            console.error("Polling error", error);
+            setIsRunning(false);
+            toast.error("Error checking results");
+        }
+    };
+
+    const handleSubmitCode = async () => {
+        console.log("Submited")
+    }
+
 
     const handleStartMatch = async () => {
         const roomRef = ref(rtdb, `rooms/${code}`);
@@ -248,10 +308,11 @@ const CodingArea = () => {
 
     // Monaco Config
     const languages = [
-        { value: 'javascript', label: 'JavaScript' },
-        { value: 'python', label: 'Python' },
-        { value: 'java', label: 'Java' },
-        { value: 'cpp', label: 'C++' },
+        { value: 'javascript', label: 'JavaScript', languageCode: 63 },
+        { value: 'python', label: 'Python', languageCode: 71 },
+        { value: 'java', label: 'Java', languageCode: 62 },
+        { value: 'cpp', label: 'C++', languageCode: 54 },
+        { value: 'c', label: 'C', languageCode: 50 },
     ];
 
     const editorOptions = {
@@ -278,7 +339,7 @@ const CodingArea = () => {
 
             <ResizablePanelGroup direction="horizontal" className="w-full h-full">
 
-                {/* --- PANEL 1: PROBLEM DESCRIPTION --- */}
+
                 <ResizablePanel defaultSize={40} minSize={25} maxSize={45}>
                     <ResizablePanelGroup direction="vertical" className="w-full h-full">
                         <ResizablePanel defaultSize={80} minSize={60}>
@@ -441,15 +502,34 @@ const CodingArea = () => {
                             </Select>
 
                             <div className='flex gap-2'>
-                                <Button
-                                    size="sm"
-                                    onClick={handleRunCode}
-                                    disabled={isRunning}
-                                    className="bg-green-600 hover:bg-green-700 text-white"
-                                >
-                                    {isRunning ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4 fill-current" />}
-                                    Run Code
-                                </Button>
+                                <ButtonGroup className="shadow-sm rounded-md isolate">
+                                    <Button
+                                        variant="secondary"
+                                        onClick={handleRunCode}
+                                        disabled={isRunning || isSubmitting}
+                                        className="min-w-20"
+                                    >
+                                        {isRunning ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <Play className="mr-2 h-4 w-4 text-gray-500" />
+                                        )}
+                                        Run
+                                    </Button>
+
+                                    <Button
+                                        onClick={handleSubmitCode}
+                                        disabled={isRunning || isSubmitting}
+                                        className="min-w-20 bg-green-600 hover:bg-green-700 text-white"
+                                    >
+                                        {isSubmitting ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <Check className="mr-2 h-4 w-4" />
+                                        )}
+                                        Submit
+                                    </Button>
+                                </ButtonGroup>
                             </div>
                         </div>
 
@@ -525,9 +605,9 @@ const CodingArea = () => {
                             {isHost && roomData?.status !== "ongoing" && (
                                 <Button
                                     onClick={handleStartMatch}
-                                    className="w-full bg-blue-600 hover:bg-blue-700 h-8 text-xs"
+                                    className="w-full bg-blue-600 hover:bg-blue-700 h-8 text-white text-xs"
                                 >
-                                    <PlayCircle className="mr-2 h-4 w-4" /> Start Match
+                                    <PlayCircle className="mr-2 h-4 w-4 text-white" /> Start Match
                                 </Button>
                             )}
 

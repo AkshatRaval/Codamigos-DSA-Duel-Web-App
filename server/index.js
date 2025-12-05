@@ -3,7 +3,7 @@ import cors from 'cors'
 import { Server } from 'socket.io'
 import http from 'http';
 import RoomRoutes from './routes/RoomRoute.js';
-import judgeRoute from './routes/JusgeRoutes.js';
+import judgeRoute from './routes/JudgeRoutes.js';
 
 // Constants
 const PORT = process.env.PORT || 4000;
