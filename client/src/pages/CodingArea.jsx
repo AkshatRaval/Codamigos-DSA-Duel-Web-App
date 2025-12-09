@@ -35,7 +35,7 @@ import { get, ref, remove, onValue, push, update } from 'firebase/database'
 import { FaCrown, FaUser } from 'react-icons/fa'
 import { useAuth } from '../lib/AuthProvider'
 // ADDED: doc, getDoc to fetch specific problems
-import { addDoc, collection, serverTimestamp, doc, getDoc } from 'firebase/firestore' 
+import { addDoc, collection, serverTimestamp, doc, getDoc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import api from '../lib/api.js'
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar.jsx'
@@ -115,9 +115,9 @@ const CodingArea = () => {
                 try {
                     // Create an array of promises to fetch only the 3 IDs in roomData.problems
                     const promises = roomData.problems.map(id => getDoc(doc(db, "problems", id)));
-                    
+
                     const snapshots = await Promise.all(promises);
-                    
+
                     // Map snapshots to data
                     const fetched = snapshots.map(snap => {
                         if (snap.exists()) {
@@ -142,7 +142,7 @@ const CodingArea = () => {
     }, [roomData, problemsData.length, activeProblemId]);
 
     // --- 3. Logic based on fetched data ---
-    
+
     // Updated: Use problemsData instead of dataset
     const prob = useMemo(() => {
         if (!activeProblemId || problemsData.length === 0) return null;
@@ -150,10 +150,31 @@ const CodingArea = () => {
     }, [activeProblemId, problemsData]);
 
     const testcases = useMemo(() => {
-        // Updated: Check for 'samples' or 'testCases' based on your DB structure
-        // Assuming your DB has 'samples' for public view
-        if (!prob || !prob.samples) return [];
-        return prob.samples.slice(0, 3);
+        // 1. Try to use the dedicated 'testCases' array from DB (It usually has clean JSON)
+        if (prob?.testCases && prob.testCases.length > 0) {
+            return prob.testCases.slice(0, 3).map(tc => ({
+                input: tc.input,
+                output: tc.output
+            }));
+        }
+
+        // 2. Fallback to 'samples' (Display data), but CLEAN IT
+        if (prob?.samples && prob.samples.length > 0) {
+            return prob.samples.slice(0, 3).map(sample => {
+                let cleanInput = sample.input;
+
+                // If input looks like 's = [...]', split by '=' and take the right side
+                if (cleanInput.includes('=')) {
+                    cleanInput = cleanInput.split('=')[1].trim();
+                }
+
+                return {
+                    input: cleanInput,
+                    output: sample.output
+                };
+            });
+        }
+        return [];
     }, [prob]);
 
     // Reset editor when problem or language changes
@@ -162,7 +183,7 @@ const CodingArea = () => {
         if (prob?.languages?.[selectedLanguage]?.starterCode) {
             setEditorCode(prob.languages[selectedLanguage].starterCode);
         } else if (prob?.starterCode?.[selectedLanguage]) {
-             // Fallback if your DB structure is flat
+            // Fallback if your DB structure is flat
             setEditorCode(prob.starterCode[selectedLanguage]);
         } else {
             setEditorCode("");
@@ -188,7 +209,7 @@ const CodingArea = () => {
                 const remaining = (45 * 60) - elapsedSeconds;
                 setTimeLeft(remaining > 0 ? remaining : 0);
             };
-            updateTimer(); 
+            updateTimer();
             interval = setInterval(updateTimer, 1000);
         } else {
             setTimeLeft(45 * 60);
@@ -214,54 +235,88 @@ const CodingArea = () => {
         });
         setChatInput("");
     };
+    // --- EXECUTION LOGIC ---
 
     const handleRunCode = async () => {
+        // 1. Safety Checks
+        if (!prob || !activeProblemId) {
+            toast.error("No problem selected");
+            return;
+        }
+        if (!editorCode.trim()) {
+            toast.error("Code editor is empty");
+            return;
+        }
+
         setIsRunning(true);
         setTestResults([]);
 
-        const lang = languages.find((lang) => lang.value === selectedLanguage);
-        const lang_id = lang ? lang.languageCode : 63;
-
-        // Use testcases derived from the fetched problem
-        const submissions = testcases.map((testCase) => ({
-            language_id: lang_id,
-            source_code: editorCode,
-            stdin: testCase.input,
-            expected_output: testCase.output
-        }));
-
-        const functionName = prob.functionName;
         try {
-            const res = await api.post('/api/judge0/run-code/batch', { submissions, functionName });
+            // 2. Get Language ID
+            const lang = languages.find((lang) => lang.value === selectedLanguage);
+            const lang_id = lang ? lang.languageCode : 63; // Default JS
+
+            // 3. Prepare Submissions
+            // Map the frontend 'editorCode' to 'source_code' for the backend
+            const submissions = testcases.map((testCase) => ({
+                language_id: lang_id,
+                source_code: editorCode,
+                stdin: testCase.input,
+                expected_output: testCase.output
+            }));
+
+            // 4. API Call
+            // Matches the backend expectation: { submissions, problemId, functionName }
+            const res = await api.post('/api/judge0/run-code/batch', {
+                submissions,
+                functionName: prob.functionName,
+                problemId: activeProblemId
+            });
+
+            // 5. Handle Response (Judge0 returns array of tokens)
             const rawData = Array.isArray(res.data) ? res.data : [res.data];
             const tokens = rawData.map(t => t.token);
+
+            // 6. Start Polling
             await checkBatchStatus(tokens);
+
         } catch (error) {
-            console.error(error);
-            toast.error("Execution failed to start");
+            console.error("Run Code Error:", error);
+            const errMsg = error.response?.data?.error || "Execution failed to start";
+            toast.error(errMsg);
             setIsRunning(false);
         }
     };
 
     const checkBatchStatus = async (tokens) => {
         const tokenString = tokens.join(',');
+
         try {
+            // Poll the status
             const res = await api.get(`/api/judge0/check-batch?tokens=${tokenString}`);
             const results = res.data.submissions;
+
+            // Check if any submission is still processing (Status ID 1 or 2)
             const isPending = results.some(r => r.status.id <= 2);
 
             if (isPending) {
+                // If pending, check again in 2 seconds
                 setTimeout(() => checkBatchStatus(tokens), 2000);
             } else {
+                // All done! Update UI
                 setTestResults(results);
-                console.log(results)
                 setIsRunning(false);
-                const passed = results.filter(r => r.status.id === 3).length;
-                if (passed === results.length) toast.success("All Test Cases Passed!");
-                else toast.error(`${results.length - passed} Test Cases Failed`);
+                console.log(results)
+                // Calculate pass rate
+                const passedCount = results.filter(r => r.status.id === 3).length;
+                if (passedCount === results.length) {
+                    toast.success("All Test Cases Passed! 🎉");
+                } else {
+                    toast.error(`${results.length - passedCount} Test Cases Failed`);
+                }
             }
         } catch (error) {
-            console.error("Polling error", error);
+            console.error("Polling Error:", error);
             setIsRunning(false);
             toast.error("Error checking results");
         }
@@ -408,7 +463,7 @@ const CodingArea = () => {
                         </ResizablePanel>
 
                         <ResizableHandle withHandle />
-                        
+
                         {/* PROBLEM LIST (Sidebar) */}
                         <ResizablePanel defaultSize={30} minSize={20} collapsible>
                             <ScrollArea className="h-full bg-muted/5">

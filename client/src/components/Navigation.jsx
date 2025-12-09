@@ -22,6 +22,7 @@ import { useNotifications } from "../utils/useNotifications";
 
 const navLinks = [
   { name: "Home", path: "/" },
+  { name: "Problems", path: "/problems" },
   { name: "Features", path: "/features" },
   { name: "Leaderboard", path: "/leaderboard" },
   { name: "About", path: "/about-us" },

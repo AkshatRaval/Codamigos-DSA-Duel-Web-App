@@ -391,14 +391,12 @@ const FriendsPage = () => {
   }, [incomingReqs, outgoingReqs, search]);
 
   const addResults = useMemo(() => {
-
     const hiddenIds = new Set([
       ...incomingReqs.map(req => req.id),
       ...outgoingReqs.map(req => req.id),
       ...friendsList.map(friend => friend.id)
     ]);
 
-    // 2. Filter out the hidden users first
     const visibleUsers = discoverUsers.filter(u => !hiddenIds.has(u.id));
 
     // 3. Apply Search Logic
@@ -410,7 +408,7 @@ const FriendsPage = () => {
       u.handle?.toLowerCase().includes(q)
     );
   }, [discoverUsers, search, incomingReqs, outgoingReqs, friendsList]);
-
+console.log(addResults)
   const clearSearch = () => setSearch("");
   return (
     // Forced dark mode wrapper
@@ -1016,7 +1014,7 @@ const AddFriendsView = ({ results, onAdd }) => {
                     </div>
                     <div>
                       <p className="text-sm font-medium leading-none text-zinc-100">
-                        {user.name}
+                        {user.displayName}
                       </p>
                       <p className="text-[11px] text-zinc-500 mt-1">
                         {user.elo} ELO

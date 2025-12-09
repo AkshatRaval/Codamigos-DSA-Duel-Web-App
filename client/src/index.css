@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Sixtyfour&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -12,6 +13,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sixty-four: "Sixtyfour", sans-serif;
+  --font-playfair: "Playfair Display", serif;
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);

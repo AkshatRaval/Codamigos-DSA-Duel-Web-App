@@ -121,7 +121,8 @@ const OnBoarding = () => {
           elo: 400,
           wins: 0,
           losses: 0,
-          streak: { current: 0, best: 0, lastActivityDate: null },
+          streak: { current: 0, best: 0, lastActivityDate: serverTimestamp() },
+          coins: 0, 
           solvedProblems: { total: 0, easy: 0, medium: 0, hard: 0 },
           socials: {
             github: formData.github.trim(),
@@ -136,7 +137,7 @@ const OnBoarding = () => {
         });
       });
 
-      toast.success("Welcome to the arena!");
+      toast.success("Welcome to Codamigos!");
       sendNotification(currentUser.uid, "We are glad to have you on Codamigos.", "welcome")
       navigate("/");
     } catch (err) {
