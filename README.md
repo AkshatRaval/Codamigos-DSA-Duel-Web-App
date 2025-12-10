@@ -152,7 +152,7 @@ cd server
 npm run dev
 ```
 
-Server will start on `http://localhost:3000`
+Server will start on `http://localhost:4000`
 
 ### Start the Client
 
