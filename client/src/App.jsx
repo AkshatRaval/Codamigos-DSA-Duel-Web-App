@@ -14,11 +14,13 @@ import Profile from "./pages/Profile.jsx";
 import CodingArea from "./pages/CodingArea.jsx";
 import MyAmigos from "./pages/MyAmigos.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
+import Problems from "./pages/Problems.jsx";
+import Shop from "./pages/Shop.jsx";
 
 const App = () => {
 
   const isMobile = () => {
-    return window.matchMedia("(max-width: 568px)").matches; 
+    return window.matchMedia("(max-width: 568px)").matches;
   };
 
   if (isMobile()) {
@@ -44,10 +46,11 @@ const App = () => {
               <Route path="about-us" element={<AboutUs />} />
               <Route path="auth" element={<LoginSignup />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="problems" element={<Problems />} />
               <Route path="leaderboard" element={<Leaderboard />} />
             </Route>
-              <Route path="myamigos" element={<MyAmigos />} />
-              <Route path="/room/:code" element={<CodingArea />} />
+            <Route path="myamigos" element={<MyAmigos />} />
+            <Route path="/room/:code" element={<CodingArea />} />
             <Route path="/room" element={<RoomPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

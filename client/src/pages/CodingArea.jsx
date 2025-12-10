@@ -1,4 +1,4 @@
-// Imports
+// file: src/pages/room/CodingArea.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     ResizableHandle,
@@ -25,39 +25,53 @@ import {
 import { ScrollArea } from "../../components/ui/scroll-area"
 import { Separator } from '../../components/ui/separator'
 import { Badge } from '../../components/ui/badge'
-// REMOVED: import { dataset } from '../data/problems'; 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '../../components/ui/carousel'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, rtdb } from '../../firebase'
-import { get, ref, remove, onValue, push, update } from 'firebase/database'
+import { get, ref, remove, onValue, push, update, set } from 'firebase/database'
 import { FaCrown, FaUser } from 'react-icons/fa'
 import { useAuth } from '../lib/AuthProvider'
-// ADDED: doc, getDoc to fetch specific problems
 import { addDoc, collection, serverTimestamp, doc, getDoc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import api from '../lib/api.js'
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar.jsx'
 import { ButtonGroup } from '../../components/ui/button-group.jsx'
 
-// Helper Functions
+// Minimal helper: format mm:ss
 const formatTime = (seconds) => {
     if (seconds <= 0) return "00:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
-// Main Function
+// Safe base64 decode — returns original if not base64
+const decodeBase64Safe = (maybeBase64) => {
+    if (maybeBase64 === null || maybeBase64 === undefined) return null;
+    if (typeof maybeBase64 !== 'string') return String(maybeBase64);
+    if (maybeBase64.trim() === '') return '';
+    try {
+        const binary = atob(maybeBase64);
+        try {
+            return decodeURIComponent(escape(binary));
+        } catch (e) {
+            return binary;
+        }
+    } catch (err) {
+        return maybeBase64;
+    }
+};
+
 const CodingArea = () => {
     const navigate = useNavigate()
     const { code } = useParams()
     const { currentUser, userData } = useAuth()
 
-    // --- State Management ---
+    // --- state ---
     const [roomData, setRoomData] = useState(null)
-    const [problemsData, setProblemsData] = useState([]) // New State for fetched problems
+    const [problemsData, setProblemsData] = useState([])
     const [selectedLanguage, setSelectedLanguage] = useState('javascript');
     const [editorCode, setEditorCode] = useState("");
     const [messages, setMessages] = useState([]);
@@ -67,33 +81,29 @@ const CodingArea = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [activeProblemId, setActiveProblemId] = useState(null);
     const [testResults, setTestResults] = useState([]);
+    const [casesOrResults, setCasesOrResults] = useState('cases'); // 'cases' | 'results'
 
-    // --- 1. Fetch Room Data & Sync ---
+    // --- 1. room & chat listeners ---
     useEffect(() => {
         if (!currentUser || !code) return;
 
         const roomRef = ref(rtdb, `rooms/${code}`);
         const messagesRef = ref(rtdb, `rooms/${code}/messages`);
 
-        // Listener for Room Data
         const unsubscribeRoom = onValue(roomRef, (snapshot) => {
             if (!snapshot.exists()) {
                 toast.error("Room ended or does not exist.");
                 navigate(`/room`);
                 return;
             }
-
             const data = snapshot.val();
             setRoomData(data);
-
-            // Access Control
             if (data.status === "ongoing" && (!data.players || !data.players[currentUser.uid])) {
                 toast.error("Match already in progress!");
                 navigate('/room');
             }
         });
 
-        // Listener for Chat Messages
         const unsubscribeChat = onValue(messagesRef, (snapshot) => {
             if (snapshot.exists()) {
                 const msgs = Object.values(snapshot.val());
@@ -107,31 +117,21 @@ const CodingArea = () => {
         };
     }, [code, navigate, currentUser]);
 
-    // --- 2. NEW: Fetch Specific Problems from Firestore ---
+    // --- 2. fetch problems from Firestore once ---
     useEffect(() => {
-        // Only run if we have roomData and haven't fetched problems yet
         if (roomData?.problems && problemsData.length === 0) {
             const fetchProblems = async () => {
                 try {
-                    // Create an array of promises to fetch only the 3 IDs in roomData.problems
                     const promises = roomData.problems.map(id => getDoc(doc(db, "problems", id)));
-
                     const snapshots = await Promise.all(promises);
-
-                    // Map snapshots to data
-                    const fetched = snapshots.map(snap => {
-                        if (snap.exists()) {
-                            return { id: snap.id, ...snap.data() };
-                        }
-                        return null;
-                    }).filter(item => item !== null);
-
-                    setProblemsData(fetched);
-
-                    // Set active problem if not set
-                    if (!activeProblemId && fetched.length > 0) {
-                        setActiveProblemId(fetched[0].id);
-                    }
+                    const fetched = snapshots.map(snap => snap.exists() ? ({ id: snap.id, ...snap.data() }) : null).filter(Boolean);
+                    // attach solved flag from RTDB if present in roomData.problemsSolved OR default false
+                    const withSolved = fetched.map(p => ({
+                        ...p,
+                        solved: !!(roomData.problemsSolved && roomData.problemsSolved[p.id])
+                    }));
+                    setProblemsData(withSolved);
+                    if (!activeProblemId && withSolved.length > 0) setActiveProblemId(withSolved[0].id);
                 } catch (error) {
                     console.error("Error fetching problems:", error);
                     toast.error("Failed to load problems");
@@ -141,65 +141,40 @@ const CodingArea = () => {
         }
     }, [roomData, problemsData.length, activeProblemId]);
 
-    // --- 3. Logic based on fetched data ---
-
-    // Updated: Use problemsData instead of dataset
+    // --- memo current problem & testcases ---
     const prob = useMemo(() => {
         if (!activeProblemId || problemsData.length === 0) return null;
-        return problemsData.find((p) => p.id === activeProblemId);
+        return problemsData.find((p) => p.id === activeProblemId) || null;
     }, [activeProblemId, problemsData]);
 
     const testcases = useMemo(() => {
-        // 1. Try to use the dedicated 'testCases' array from DB (It usually has clean JSON)
+        if (!prob) return [];
         if (prob?.testCases && prob.testCases.length > 0) {
-            return prob.testCases.slice(0, 3).map(tc => ({
-                input: tc.input,
-                output: tc.output
-            }));
+            return prob.testCases.slice(0, 3).map(tc => ({ input: tc.input, output: tc.output }));
         }
-
-        // 2. Fallback to 'samples' (Display data), but CLEAN IT
         if (prob?.samples && prob.samples.length > 0) {
             return prob.samples.slice(0, 3).map(sample => {
                 let cleanInput = sample.input;
-
-                // If input looks like 's = [...]', split by '=' and take the right side
-                if (cleanInput.includes('=')) {
-                    cleanInput = cleanInput.split('=')[1].trim();
-                }
-
-                return {
-                    input: cleanInput,
-                    output: sample.output
-                };
+                if (cleanInput.includes('=')) cleanInput = cleanInput.split('=')[1].trim();
+                return { input: cleanInput, output: sample.output };
             });
         }
         return [];
     }, [prob]);
 
-    // Reset editor when problem or language changes
+    // --- reset editor when problem or language changes ---
     useEffect(() => {
-        // Safe check for languages
-        if (prob?.languages?.[selectedLanguage]?.starterCode) {
-            setEditorCode(prob.languages[selectedLanguage].starterCode);
-        } else if (prob?.starterCode?.[selectedLanguage]) {
-            // Fallback if your DB structure is flat
-            setEditorCode(prob.starterCode[selectedLanguage]);
-        } else {
-            setEditorCode("");
-        }
+        const starter = (prob?.languages?.[selectedLanguage]?.starterCode)
+            || (prob?.starterCode?.[selectedLanguage])
+            || "";
+        setEditorCode(starter);
     }, [selectedLanguage, prob]);
 
-
-    // Chat Auto Scroll
+    // chat scroll
     const scrollRef = useRef(null);
-    useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [messages]);
+    useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-    // Timer Logic
+    // timer
     useEffect(() => {
         let interval;
         if (roomData?.status === "ongoing" && roomData?.startTime) {
@@ -211,18 +186,12 @@ const CodingArea = () => {
             };
             updateTimer();
             interval = setInterval(updateTimer, 1000);
-        } else {
-            setTimeLeft(45 * 60);
-        }
-        return () => {
-            if (interval) clearInterval(interval);
-        }
+        } else setTimeLeft(45 * 60);
+        return () => { if (interval) clearInterval(interval); }
     }, [roomData?.status, roomData?.startTime]);
 
-
-    const handleEditorChange = (value) => {
-        setEditorCode(value || "");
-    }
+    // editor change
+    const handleEditorChange = (value) => setEditorCode(value || "");
 
     const handleSendMessage = async () => {
         if (!chatInput.trim()) return;
@@ -235,146 +204,17 @@ const CodingArea = () => {
         });
         setChatInput("");
     };
-    // --- EXECUTION LOGIC ---
 
-    const handleRunCode = async () => {
-        // 1. Safety Checks
-        if (!prob || !activeProblemId) {
-            toast.error("No problem selected");
-            return;
-        }
-        if (!editorCode.trim()) {
-            toast.error("Code editor is empty");
-            return;
-        }
-
-        setIsRunning(true);
-        setTestResults([]);
-
-        try {
-            // 2. Get Language ID
-            const lang = languages.find((lang) => lang.value === selectedLanguage);
-            const lang_id = lang ? lang.languageCode : 63; // Default JS
-
-            // 3. Prepare Submissions
-            // Map the frontend 'editorCode' to 'source_code' for the backend
-            const submissions = testcases.map((testCase) => ({
-                language_id: lang_id,
-                source_code: editorCode,
-                stdin: testCase.input,
-                expected_output: testCase.output
-            }));
-
-            // 4. API Call
-            // Matches the backend expectation: { submissions, problemId, functionName }
-            const res = await api.post('/api/judge0/run-code/batch', {
-                submissions,
-                functionName: prob.functionName,
-                problemId: activeProblemId
-            });
-
-            // 5. Handle Response (Judge0 returns array of tokens)
-            const rawData = Array.isArray(res.data) ? res.data : [res.data];
-            const tokens = rawData.map(t => t.token);
-
-            // 6. Start Polling
-            await checkBatchStatus(tokens);
-
-        } catch (error) {
-            console.error("Run Code Error:", error);
-            const errMsg = error.response?.data?.error || "Execution failed to start";
-            toast.error(errMsg);
-            setIsRunning(false);
-        }
+    // Reset code to starter
+    const handleResetCode = () => {
+        const starter = (prob?.languages?.[selectedLanguage]?.starterCode)
+            || (prob?.starterCode?.[selectedLanguage])
+            || "";
+        setEditorCode(starter);
+        toast.success("Editor reset to starter code");
     };
 
-    const checkBatchStatus = async (tokens) => {
-        const tokenString = tokens.join(',');
-
-        try {
-            // Poll the status
-            const res = await api.get(`/api/judge0/check-batch?tokens=${tokenString}`);
-            const results = res.data.submissions;
-
-            // Check if any submission is still processing (Status ID 1 or 2)
-            const isPending = results.some(r => r.status.id <= 2);
-
-            if (isPending) {
-                // If pending, check again in 2 seconds
-                setTimeout(() => checkBatchStatus(tokens), 2000);
-            } else {
-                // All done! Update UI
-                setTestResults(results);
-                setIsRunning(false);
-                console.log(results)
-                // Calculate pass rate
-                const passedCount = results.filter(r => r.status.id === 3).length;
-                if (passedCount === results.length) {
-                    toast.success("All Test Cases Passed! 🎉");
-                } else {
-                    toast.error(`${results.length - passedCount} Test Cases Failed`);
-                }
-            }
-        } catch (error) {
-            console.error("Polling Error:", error);
-            setIsRunning(false);
-            toast.error("Error checking results");
-        }
-    };
-
-    const handleSubmitCode = async () => {
-        console.log("Submited")
-        // Implement full submission logic here
-    }
-
-    const handleStartMatch = async () => {
-        const roomRef = ref(rtdb, `rooms/${code}`);
-        try {
-            await update(roomRef, {
-                status: "ongoing",
-                startTime: Date.now()
-            });
-            toast.success("Match Started! Timer running.");
-        } catch (error) {
-            toast.error("Failed to start match");
-            console.error(error);
-        }
-    }
-
-    const handleLeave = async () => {
-        if (!currentUser) return;
-        const roomRef = ref(rtdb, `rooms/${code}`);
-        const playerRef = ref(rtdb, `rooms/${code}/players/${currentUser.uid}`);
-        try {
-            const snapshot = await get(roomRef);
-            if (!snapshot.exists()) {
-                navigate(`/room`);
-                return;
-            }
-            const currentRoomData = snapshot.val();
-            const isHost = currentRoomData?.players?.[currentUser.uid]?.isHost;
-
-            if (isHost) {
-                const safeData = JSON.parse(JSON.stringify(currentRoomData));
-                await addDoc(collection(db, "roomsData"), {
-                    ...safeData,
-                    roomId: code,
-                    archivedAt: serverTimestamp()
-                });
-                await remove(roomRef);
-                toast.success("Room archived and closed.");
-            } else {
-                await remove(playerRef);
-                toast.success("You left the room.");
-            }
-            navigate(`/room`);
-        } catch (error) {
-            console.error("Error leaving room:", error);
-            toast.error("Error processing request.");
-        }
-    }
-
-    // Monaco Config
+    // languages config
     const languages = [
         { value: 'javascript', label: 'JavaScript', languageCode: 63 },
         { value: 'python', label: 'Python', languageCode: 71 },
@@ -394,7 +234,176 @@ const CodingArea = () => {
 
     const isHost = roomData?.players?.[currentUser?.uid]?.isHost;
 
-    // Loading State
+    // Run/Submit flow: isSubmit toggles whether it's a submission.
+    const handleRunCode = async (isSubmit = false) => {
+        if (!prob || !activeProblemId) {
+            toast.error("No problem selected");
+            return;
+        }
+        if (!editorCode.trim()) {
+            toast.error("Code editor is empty");
+            return;
+        }
+
+        setTestResults([]);
+        setIsRunning(!isSubmit);
+        setIsSubmitting(isSubmit);
+
+        try {
+            const lang = languages.find((l) => l.value === selectedLanguage);
+            const lang_id = lang ? lang.languageCode : 63;
+
+            const submissions = testcases.map((testCase) => ({
+                language_id: lang_id,
+                source_code: editorCode,
+                stdin: testCase.input,
+                expected_output: testCase.output
+            }));
+
+            const res = await api.post('/api/judge0/run-code/batch', {
+                submissions,
+                functionName: prob.functionName,
+                problemId: activeProblemId
+            });
+
+            const rawData = Array.isArray(res.data) ? res.data : [res.data];
+            const tokens = rawData.map(t => t.token);
+
+            // Poll until final; switching to Results tab happens after completion
+            await checkBatchStatus(tokens, isSubmit);
+        } catch (error) {
+            console.error("Run Code Error:", error);
+            const errMsg = error.response?.data?.error || "Execution failed to start";
+            toast.error(errMsg);
+            setIsRunning(false);
+            setIsSubmitting(false);
+        }
+    };
+
+    // Poll Judge0; when final results are ready, handle submit success persistence.
+    const checkBatchStatus = async (tokens, isSubmit = false) => {
+        const tokenString = tokens.join(',');
+        try {
+            const res = await api.get(`/api/judge0/check-batch?tokens=${tokenString}`);
+            const results = res.data.submissions || [];
+
+            const isPending = results.some(r => r.status.id <= 2);
+            // Update intermediate results (optional)
+            setTestResults(results);
+
+            if (isPending) {
+                setTimeout(() => checkBatchStatus(tokens, isSubmit), 1500);
+                return;
+            }
+
+            // Completed
+            const passedCount = results.filter(r => r.status.id === 3).length;
+            const allPassed = (passedCount === results.length);
+
+            setIsRunning(false);
+            setIsSubmitting(false);
+
+            // Switch to results only when final results are available
+            setCasesOrResults('results');
+
+            if (isSubmit) {
+                if (allPassed) {
+                    // 1) mark solved locally for immediate UI feedback
+                    setProblemsData(prev => prev.map(p => p.id === activeProblemId ? ({ ...p, solved: true }) : p));
+
+                    // 2) Persist solved info and submission into Realtime DB
+                    try {
+                        // mark problem solved under room
+                        await set(ref(rtdb, `rooms/${code}/problemsSolved/${activeProblemId}`), {
+                            solvedBy: currentUser.uid,
+                            solverName: userData?.displayName || null,
+                            solvedAt: Date.now()
+                        });
+
+                        // store the accepted submission (under submissions/{problemId}/{uid})
+                        await set(ref(rtdb, `rooms/${code}/submissions/${activeProblemId}/${currentUser.uid}`), {
+                            source_code: editorCode,
+                            language: selectedLanguage,
+                            timestamp: Date.now(),
+                            passed: true
+                        });
+                    } catch (dbErr) {
+                        console.error("RTDB persistence error:", dbErr);
+                        // don't block user; notify
+                        toast.error("Saved locally but failed to persist submission to RTDB.");
+                    }
+
+                    toast.success("Submission accepted — problem marked as solved ✅");
+                } else {
+                    // store failed submission optionally (commented — you can enable if you want)
+                    /*
+                    await set(ref(rtdb, `rooms/${code}/submissions/${activeProblemId}/${currentUser.uid}`), {
+                        source_code: editorCode,
+                        language: selectedLanguage,
+                        timestamp: Date.now(),
+                        passed: false
+                    });
+                    */
+                    toast.error(`${results.length - passedCount} Test Cases Failed. Try again.`);
+                }
+            } else {
+                if (allPassed) toast.success("All test cases passed! 🎉");
+                else toast.error(`${results.length - passedCount} Failed`);
+            }
+        } catch (error) {
+            console.error("Polling Error:", error);
+            toast.error("Error checking results");
+            setIsRunning(false);
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleSubmitCode = async () => { await handleRunCode(true); }
+
+    const handleStartMatch = async () => {
+        const roomRef = ref(rtdb, `rooms/${code}`);
+        try {
+            await update(roomRef, { status: "ongoing", startTime: Date.now() });
+            toast.success("Match Started! Timer running.");
+        } catch (error) {
+            toast.error("Failed to start match");
+            console.error(error);
+        }
+    }
+
+    const handleLeave = async () => {
+        if (!currentUser) return;
+        const roomRef = ref(rtdb, `rooms/${code}`);
+        const playerRef = ref(rtdb, `rooms/${code}/players/${currentUser.uid}`);
+        try {
+            const snapshot = await get(roomRef);
+            if (!snapshot.exists()) {
+                navigate(`/room`);
+                return;
+            }
+            const currentRoomData = snapshot.val();
+            const isHostLocal = currentRoomData?.players?.[currentUser.uid]?.isHost;
+
+            if (isHostLocal) {
+                const safeData = JSON.parse(JSON.stringify(currentRoomData));
+                await addDoc(collection(db, "roomsData"), {
+                    ...safeData,
+                    roomId: code,
+                    archivedAt: serverTimestamp()
+                });
+                await remove(roomRef);
+                toast.success("Room archived and closed.");
+            } else {
+                await remove(playerRef);
+                toast.success("You left the room.");
+            }
+            navigate(`/room`);
+        } catch (error) {
+            console.error("Error leaving room:", error);
+            toast.error("Error processing request.");
+        }
+    }
+
     if (!roomData || !prob) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-background">
@@ -416,16 +425,24 @@ const CodingArea = () => {
                                 <div className='p-4 flex flex-col gap-4'>
                                     <div className='flex justify-between items-start'>
                                         <div className='w-full'>
-                                            <div className='flex justify-between'>
-                                                <h1 className='font-bold text-2xl tracking-tight '>{prob.title}</h1>
-                                                <Badge variant={prob.difficulty} className="h-fit py-2 px-5">
-                                                    {prob.difficulty}
-                                                </Badge>
-                                            </div>
-                                            <div className='flex gap-2 mt-2'>
-                                                {prob.tags && prob.tags.map((tag) => (
-                                                    <Badge key={tag} variant="outline" className="capitalize text-xs">{tag}</Badge>
-                                                ))}
+                                            <div className='flex justify-between items-start gap-4'>
+                                                <div>
+                                                    <h1 className='font-bold text-2xl tracking-tight '>{prob.title}</h1>
+                                                    <div className='flex gap-2 mt-2'>
+                                                        {prob.tags && prob.tags.map((tag) => (
+                                                            <Badge key={tag} variant="outline" className="capitalize text-xs">{tag}</Badge>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col items-end gap-2">
+                                                    <Badge variant={prob.difficulty} className="h-fit py-2 px-5">
+                                                        {prob.difficulty}
+                                                    </Badge>
+                                                    {prob.solved && (
+                                                        <div className="text-green-600 text-sm font-semibold">Solved</div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -445,6 +462,13 @@ const CodingArea = () => {
                                                     <div className='bg-background p-2 rounded border mb-2 font-mono'>{sample.input}</div>
                                                     <div className='font-mono font-bold mb-1'>Output:</div>
                                                     <div className='bg-background p-2 rounded border font-mono'>{sample.output}</div>
+                                                    {/* explanation if available */}
+                                                    {sample.explanation && (
+                                                        <>
+                                                            <div className='font-mono font-bold mt-2 mb-1'>Explanation:</div>
+                                                            <div className='text-sm text-muted-foreground'>{sample.explanation}</div>
+                                                        </>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -468,7 +492,6 @@ const CodingArea = () => {
                         <ResizablePanel defaultSize={30} minSize={20} collapsible>
                             <ScrollArea className="h-full bg-muted/5">
                                 <div className="p-4 flex flex-col gap-4">
-                                    {/* Header */}
                                     <div className="flex items-center justify-between px-1">
                                         <div className="flex items-center gap-2">
                                             <ListTodo className="h-4 w-4 text-primary" />
@@ -484,9 +507,8 @@ const CodingArea = () => {
                                     {/* Problem List Items */}
                                     <div className="flex flex-col gap-2.5">
                                         {problemsData.map((details, index) => {
-                                            // Mapping through fetched problemsData
                                             const isActive = activeProblemId === details.id;
-
+                                            const solved = !!details.solved;
                                             return (
                                                 <div
                                                     key={details.id}
@@ -496,10 +518,9 @@ const CodingArea = () => {
                                 hover:border-primary/50 hover:shadow-sm
                                 ${isActive
                                                             ? "bg-background border-primary/60 shadow-md ring-1 ring-primary/10"
-                                                            : "bg-card border-border/60 text-muted-foreground hover:bg-accent/50"
-                                                        }
-                            `}
-                                                >
+                                                            : solved
+                                                                ? "bg-green-900/30 border-green-200 text-foreground"
+                                                                : "bg-card border-border/60 text-muted-foreground hover:bg-accent/50"}`}>
                                                     {isActive && (
                                                         <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary rounded-l-lg" />
                                                     )}
@@ -522,9 +543,17 @@ const CodingArea = () => {
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        <Badge variant={details.difficulty}>
-                                                            {details.difficulty}
-                                                        </Badge>
+
+                                                        <div className="flex flex-col items-end gap-1">
+                                                            <Badge variant={details.difficulty}>
+                                                                {details.difficulty}
+                                                            </Badge>
+                                                            {solved && (
+                                                                <div title="Solved" className="text-green-600 mt-1">
+                                                                    <Check size={16} />
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )
@@ -545,22 +574,30 @@ const CodingArea = () => {
 
                         {/* Editor Toolbar */}
                         <div className='h-12 border-b flex items-center justify-between px-4 bg-card'>
-                            <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
-                                <SelectTrigger className="w-[140px] h-8">
-                                    <SelectValue placeholder="Language" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {languages.map((lang) => (
-                                        <SelectItem key={lang.value} value={lang.value}>{lang.label}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <div className="flex items-center gap-3">
+                                <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+                                    <SelectTrigger className="w-[140px] h-8">
+                                        <SelectValue placeholder="Language" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {languages.map((lang) => (
+                                            <SelectItem key={lang.value} value={lang.value}>{lang.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {/* display room name */}
+                                {roomData?.name && (
+                                    <div className="text-sm text-muted-foreground ml-2">
+                                        <span className="font-semibold">Room:</span> {roomData.name}
+                                    </div>
+                                )}
+                            </div>
 
                             <div className='flex gap-2'>
                                 <ButtonGroup className="shadow-sm rounded-md isolate">
                                     <Button
                                         variant="secondary"
-                                        onClick={handleRunCode}
+                                        onClick={() => handleRunCode(false)}
                                         disabled={isRunning || isSubmitting}
                                         className="min-w-20"
                                     >
@@ -602,40 +639,106 @@ const CodingArea = () => {
 
                         <ResizableHandle withHandle />
 
-                        {/* Test Cases Panel */}
+                        {/* Test Cases Panel (with tabs) */}
                         <ResizablePanel defaultSize={35} minSize={20} className="flex flex-col bg-muted/10">
                             <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
-                                <h1 className="font-semibold text-sm flex items-center gap-2">
-                                    <Terminal size={14} /> Test Results
-                                </h1>
+                                <div className="flex items-center gap-3">
+                                    <h1 className="font-semibold text-sm flex items-center gap-2">
+                                        <Terminal size={14} /> Test
+                                    </h1>
+
+                                    <div className="flex items-center gap-1 bg-muted rounded">
+                                        <button
+                                            onClick={() => setCasesOrResults('cases')}
+                                            className={`px-3 py-1 text-xs ${casesOrResults === 'cases' ? 'bg-background font-semibold' : 'text-muted-foreground'}`}
+                                        >
+                                            Cases
+                                        </button>
+                                        <button
+                                            onClick={() => setCasesOrResults('results')}
+                                            className={`px-3 py-1 text-xs ${casesOrResults === 'results' ? 'bg-background font-semibold' : 'text-muted-foreground'}`}
+                                        >
+                                            Results
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <Badge variant="outline" className="text-xs">{testcases.length} Cases</Badge>
                             </div>
+
                             <div className="flex-1 p-4 overflow-hidden">
-                                <Carousel className="w-full max-w-xl mx-auto" opts={{ align: "start" }}>
-                                    <CarouselContent>
-                                        {testcases.map((test, index) => (
-                                            <CarouselItem key={index} className="md:basis-1/2 lg:basis-1/2">
-                                                <Card className='h-full'>
-                                                    <CardHeader className="p-3 pb-0">
-                                                        <CardTitle className="text-sm font-medium">Case {index + 1}</CardTitle>
-                                                    </CardHeader>
-                                                    <CardContent className="p-3 text-xs font-mono space-y-2">
-                                                        <div>
-                                                            <span className="text-muted-foreground">Input:</span>
-                                                            <div className="bg-muted p-1 rounded mt-1 truncate">{test.input}</div>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-muted-foreground">Expected:</span>
-                                                            <div className="bg-muted p-1 rounded mt-1 truncate">{test.output}</div>
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            </CarouselItem>
-                                        ))}
-                                    </CarouselContent>
-                                    <CarouselPrevious className="left-0" />
-                                    <CarouselNext className="right-0" />
-                                </Carousel>
+                                {casesOrResults === 'cases' ? (
+                                    <Carousel className="w-full max-w-xl mx-auto" opts={{ align: "start" }}>
+                                        <CarouselContent>
+                                            {testcases.map((test, index) => (
+                                                <CarouselItem key={index} className="md:basis-1/2 lg:basis-1/2">
+                                                    <Card className='h-full'>
+                                                        <CardHeader className="p-3 pb-0">
+                                                            <CardTitle className="text-sm font-medium">Case {index + 1}</CardTitle>
+                                                        </CardHeader>
+                                                        <CardContent className="p-3 text-xs font-mono space-y-2">
+                                                            <div>
+                                                                <span className="text-muted-foreground">Input:</span>
+                                                                <div className="bg-muted p-1 rounded mt-1">{test.input}</div>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-muted-foreground">Expected:</span>
+                                                                <div className="bg-muted p-1 rounded mt-1">{test.output}</div>
+                                                            </div>
+                                                        </CardContent>
+                                                    </Card>
+                                                </CarouselItem>
+                                            ))}
+                                        </CarouselContent>
+                                        <CarouselPrevious className="left-0" />
+                                        <CarouselNext className="right-0" />
+                                    </Carousel>
+                                ) : (
+                                    // Results: scroll container, pre-wrap outputs, no truncation to avoid overflow
+                                    <div className="space-y-3 max-h-[380px] overflow-y-auto pr-2">
+                                        {testResults.length === 0 ? (
+                                            <div className="text-sm text-muted-foreground">No results yet. Run or Submit to see output here.</div>
+                                        ) : (
+                                            testResults.map((res, i) => {
+                                                const passed = res.status?.id === 3;
+                                                const stdout = decodeBase64Safe(res.stdout);
+                                                const stderr = decodeBase64Safe(res.stderr);
+                                                const compileOutput = decodeBase64Safe(res.compile_output);
+                                                return (
+                                                    <Card key={i}>
+                                                        <CardHeader className="p-3 flex items-center justify-between">
+                                                            <CardTitle className="text-sm font-medium">
+                                                                Case {i + 1} — {passed ? <span className="text-green-500">Passed</span> : <span className="text-red-500">Failed</span>}
+                                                            </CardTitle>
+                                                        </CardHeader>
+                                                        <CardContent className="p-3 text-xs font-mono space-y-2">
+                                                            <div>
+                                                                <div className="text-muted-foreground text-[11px]">Expected</div>
+                                                                <div className="bg-muted p-1 rounded mt-1">{testcases[i]?.output ?? '—'}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-muted-foreground text-[11px]">Stdout</div>
+                                                                <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap break-words">{stdout ?? 'No output'}</div>
+                                                            </div>
+                                                            {stderr && (
+                                                                <div>
+                                                                    <div className="text-muted-foreground text-[11px]">Stderr</div>
+                                                                    <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap break-words">{stderr}</div>
+                                                                </div>
+                                                            )}
+                                                            {compileOutput && (
+                                                                <div>
+                                                                    <div className="text-muted-foreground text-[11px]">Compiler</div>
+                                                                    <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap break-words">{compileOutput}</div>
+                                                                </div>
+                                                            )}
+                                                        </CardContent>
+                                                    </Card>
+                                                )
+                                            })
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </ResizablePanel>
                     </ResizablePanelGroup>
@@ -648,15 +751,18 @@ const CodingArea = () => {
                     <div className="flex flex-col h-full bg-background border-l">
                         {/* Room Code & Timer */}
                         <div className='p-4 border-b flex flex-col items-center gap-3'>
-                            <div className='flex items-center gap-2 text-yellow-500 font-bold bg-yellow-500/10 border border-yellow-500/20 px-4 py-1.5 rounded-full text-sm'>
+                            <div className='flex items-center gap-2 text-yellow-500 font-bold bg-yellow-500/10 border border-yellow-500/20 px-3 py-1.5 rounded-full text-sm'>
                                 {roomData?.status === "ongoing" ? <Lock size={14} /> : <Link size={14} />}
-                                {code}
+                                <div className='flex flex-col ml-2 items-start'>
+                                    <div className="font-mono">{code}</div>
+                                    {roomData?.name && <div className="text-[11px] text-muted-foreground">{roomData.name}</div>}
+                                </div>
                             </div>
+
                             <div className={`text-2xl font-mono font-bold ${timeLeft < 300 && roomData?.status === "ongoing" ? 'text-red-500 animate-pulse' : 'text-primary'}`}>
                                 {formatTime(timeLeft)}
                             </div>
 
-                            {/* START MATCH BUTTON (Only for Host & if not started) */}
                             {isHost && roomData?.status !== "ongoing" && (
                                 <Button
                                     onClick={handleStartMatch}
@@ -666,7 +772,6 @@ const CodingArea = () => {
                                 </Button>
                             )}
 
-                            {/* Status Indicator */}
                             {roomData?.status === "ongoing" && (
                                 <Badge variant="secondary" className="w-full justify-center bg-green-500/10 text-green-500 hover:bg-green-500/20 border-green-500/50">
                                     Ongoing
@@ -691,7 +796,7 @@ const CodingArea = () => {
                         <div className='p-3 border-t grid grid-cols-2 gap-2'>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <Button variant="outline" size="icon" className="w-full">
+                                    <Button variant="outline" size="icon" className="w-full" onClick={handleResetCode}>
                                         <RotateCcw size={16} />
                                     </Button>
                                 </TooltipTrigger>
@@ -757,9 +862,7 @@ const CodingArea = () => {
                                                                 <span className="text-[11px] font-semibold text-muted-foreground">
                                                                     {isMe ? "You" : msg.sender}
                                                                 </span>
-                                                                <span className="text-[10px] text-gray-400">
-                                                                    10:42 AM
-                                                                </span>
+                                                                <span className="text-[10px] text-gray-400">10:42 AM</span>
                                                             </div>
 
                                                             <div
