@@ -4,11 +4,16 @@ import { motion } from "motion/react";
 import FakeCodeEditor from "../../components/ui/code-editor";
 import BentoGrid from "../../components/ui/bento-grid";
 import { useNavigate } from "react-router-dom";
+import CheckinCard from "../components/CheckIn";
+import { useAuth } from "../lib/AuthProvider";
 
 const Home = () => {
   const navigate = useNavigate();
+  const { userData} = useAuth();
   return (
     <>
+      <CheckinCard userData={userData} refreshUser={fetchUser} />
+
       <section className="relative min-h-screen w-full flex flex-col justify-center items-center bg-[#0a0a0a] text-white">
         {/* Decorative Background Glows */}
         <motion.div
@@ -83,7 +88,7 @@ const Home = () => {
 
       {/* ================================== Bento Grid ================================== */}
 
-      <motion.h1 initial={{ opacity: 0, y: -10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}  className="text-center mt-5 -mb-5 text-5xl font-bold italic ">Code, Win, Repeat</motion.h1>
+      <motion.h1 initial={{ opacity: 0, y: -10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="text-center mt-5 -mb-5 text-5xl font-bold italic ">Code, Win, Repeat</motion.h1>
       <section className="relative flex items-center justify-center w-full">
         <BentoGrid />
         <motion.div

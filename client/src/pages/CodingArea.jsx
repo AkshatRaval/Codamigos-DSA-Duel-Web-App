@@ -716,18 +716,18 @@ const CodingArea = () => {
                                                             </div>
                                                             <div>
                                                                 <div className="text-muted-foreground text-[11px]">Stdout</div>
-                                                                <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap break-words">{stdout ?? 'No output'}</div>
+                                                                <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap wrap-break-word">{stdout ?? 'No output'}</div>
                                                             </div>
                                                             {stderr && (
                                                                 <div>
                                                                     <div className="text-muted-foreground text-[11px]">Stderr</div>
-                                                                    <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap break-words">{stderr}</div>
+                                                                    <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap wrap-break-words">{stderr}</div>
                                                                 </div>
                                                             )}
                                                             {compileOutput && (
                                                                 <div>
                                                                     <div className="text-muted-foreground text-[11px]">Compiler</div>
-                                                                    <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap break-words">{compileOutput}</div>
+                                                                    <div className="bg-muted p-1 rounded mt-1 whitespace-pre-wrap wrap-break-words">{compileOutput}</div>
                                                                 </div>
                                                             )}
                                                         </CardContent>
