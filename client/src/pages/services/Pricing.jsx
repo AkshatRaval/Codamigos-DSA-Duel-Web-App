@@ -24,7 +24,7 @@ const Pricing = () => {
           <span>Pricing</span>
         </Badge>
 
-        <h1 className="mt-4 text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter bg-gradient-to-b from-foreground to-foreground/50 bg-clip-text text-transparent">
+        <h1 className="mt-4 text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter bg-linear-to-b from-foreground to-foreground/50 bg-clip-text text-transparent">
           Plan Comparison
         </h1>
 

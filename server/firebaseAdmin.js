@@ -10,7 +10,6 @@ const serviceAccount = require("./keyFirebase.json");
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-
     databaseURL: process.env.RTDB_URL, 
 });
 

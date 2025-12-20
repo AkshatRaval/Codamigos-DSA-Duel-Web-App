@@ -82,6 +82,8 @@ const CodingArea = () => {
     const [activeProblemId, setActiveProblemId] = useState(null);
     const [testResults, setTestResults] = useState([]);
     const [casesOrResults, setCasesOrResults] = useState('cases');
+
+    
     useEffect(() => {
         if (!currentUser || !code) return;
 

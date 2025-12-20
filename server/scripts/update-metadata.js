@@ -31,27 +31,37 @@ async function updateMetadata() {
         // --- PART A: PROBLEMS METADATA ---
         console.log("🔍 Scanning 'problems' collection...");
         const problemSnapshot = await db.collection('problems').get();
-        
+
         const easy = [];
         const medium = [];
         const hard = [];
         const allProblems = [];
+
+
 
         problemSnapshot.forEach(doc => {
             const id = doc.id;
             const data = doc.data();
             const diff = (data.difficulty || 'easy').toLowerCase();
 
-            allProblems.push(id);
-            if (diff === 'easy') easy.push(id);
-            else if (diff === 'medium') medium.push(id);
-            else if (diff === 'hard') hard.push(id);
+            const problemsMetadata = {
+                id: doc.id,
+                title: data.title,
+                difficulty: diff,
+                tags: data.tags,
+                statement: data.statement
+            }
+
+            allProblems.push(problemsMetadata);
+            if (diff === 'easy') easy.push(problemsMetadata);
+            else if (diff === 'medium') medium.push(problemsMetadata);
+            else if (diff === 'hard') hard.push(problemsMetadata);
         });
 
         // --- PART B: USERS METADATA & LEADERBOARD ---
         console.log("🔍 Scanning 'users' collection...");
         const userSnapshot = await db.collection('users').get();
-        
+
         let allUsersRaw = [];
         let totalElo = 0;
         let usersWithElo = 0;
@@ -79,7 +89,7 @@ async function updateMetadata() {
 
         // Sort by Elo descending for Leaderboard
         allUsersRaw.sort((a, b) => b.elo - a.elo);
-        
+
         // Take Top 100 for the Leaderboard
         const top100Leaderboard = allUsersRaw.slice(0, 100);
 
@@ -113,7 +123,7 @@ async function updateMetadata() {
         console.log(`✅ Success! Metadata updated.`);
         console.log(`📊 Problems: ${allProblems.length} (Easy: ${easy.length}, Med: ${medium.length}, Hard: ${hard.length})`);
         console.log(`🏆 Users:    ${allUsersRaw.length} total. Leaderboard updated with Top ${top100Leaderboard.length}.`);
-        
+
         process.exit(0);
 
     } catch (error) {

@@ -18,7 +18,7 @@ const PricingCard = memo(({ tier }) => {
       whileHover={{ y: -4 }}
       transition={{ type: "spring", stiffness: 200, damping: 20 }}
       // OPTIMIZATION: Reduced blur from xl to sm, added transform-gpu
-      className="transform-gpu w-full max-w-sm rounded-2xl border bg-gradient-to-b from-white/5 to-transparent backdrop-blur-sm p-8 border-neutral-800 flex flex-col will-change-transform"
+      className="transform-gpu w-full max-w-sm rounded-2xl border bg-linear-to-b from-white/5 to-transparent backdrop-blur-sm p-8 border-neutral-800 flex flex-col will-change-transform"
     >
       <Badge
         variant="outline"

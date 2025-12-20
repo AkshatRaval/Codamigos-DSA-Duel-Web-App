@@ -13,7 +13,6 @@ import {
 
 export const pricingTiers = [
     {
-
         badgeColor: "bg-zinc-500/10 border-zinc-500 text-zinc-400",
         name: "Free",
         price: 0,

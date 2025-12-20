@@ -15,7 +15,7 @@ const Leaderboard = () => {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 6;
+  const pageSize = 10;
   const fetchTopPlayers = useCallback(async () => {
     setLoading(true);
     setError(null);
